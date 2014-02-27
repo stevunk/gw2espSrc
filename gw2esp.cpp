@@ -1,3 +1,7 @@
+/*
+Compile to a DLL and inject into your running gw2.exe process
+*/
+
 #include <locale>
 #include <iomanip>
 #include <sstream>

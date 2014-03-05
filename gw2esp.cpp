@@ -5,17 +5,28 @@ Compile to a DLL and inject into your running gw2.exe process
 #include <iomanip>
 #include <sstream>
 #include <Windows.h>
-#include <boost/circular_buffer.hpp> // Boost v1.55 library
+#include <boost/circular_buffer.hpp> // Boost v1.55 Library
 #include <numeric>
 #include <assert.h>
-
 #include "gw2lib.h"
-
 
 using namespace GW2LIB;
 
 // ESP Elements
 bool Help = false;
+
+bool DpsMeter = true;
+bool DpsDebug = false;
+bool AllowNegativeDps = false;
+bool DpsLock = false;
+
+int  FloatersRange = 6000;
+bool Floaters = false;
+bool FloatersType = true;
+bool EnemyFloaters = true;
+bool AllyFloaters = true;
+bool EnemyPlayerFloaters = true;
+bool AllyPlayerFloaters = true;
 
 bool SelectedHealth = true;
 bool SelectedHealthPercent = true;
@@ -24,18 +35,8 @@ bool SelectedDebug = false;
 
 bool SelfHealth = false;
 bool SelfHealthPercent = true;
-bool DpsMeter = true;
-bool DpsDebug = false;
-bool AllowNegativeDps = false;
-bool KillTime = false;
 
-bool Floaters = false;
-bool FloatersType = true;
-int  FloatersRange = 6000;
-bool EnemyFloaters = true;
-bool AllyFloaters = true;
-bool EnemyPlayerFloaters = true;
-bool AllyPlayerFloaters = true;
+bool KillTime = false;
 
 // Global Vars
 Font font;
@@ -71,30 +72,40 @@ void cbESP()
 		fontHelp.Draw(760, 150 + 15 * 3, fontColor, "[%i] [Alt D] DPS Meter", DpsMeter);
 		fontHelp.Draw(760, 150 + 15 * 4, fontColor, "[%i] [Alt B] DPS Meter Debug", DpsDebug);
 		fontHelp.Draw(760, 150 + 15 * 5, fontColor, "[%i] [Alt N] DPS Meter AllowNegativeDPS", AllowNegativeDps);
+		fontHelp.Draw(760, 150 + 15 * 6, fontColor, "[%i] [Alt L] DPS Meter LockOnCurrentlySelected", DpsLock);
 
-		fontHelp.Draw(760, 150 + 15 * 7, fontColor, "[%i] [Alt F] Floaters", Floaters);
-		fontHelp.Draw(760, 150 + 15 * 8, fontColor, "[%i] [Alt 0] Floaters Type (Distance or Health)", FloatersType);
-		fontHelp.Draw(760, 150 + 15 * 9, fontColor, "[%i] [Alt 1] Floaters on Ally NPC", AllyFloaters);
-		fontHelp.Draw(760, 150 + 15 * 10, fontColor, "[%i] [Alt 2] Floaters on Ally Players", AllyPlayerFloaters);
-		fontHelp.Draw(760, 150 + 15 * 11, fontColor, "[%i] [Alt 3] Floaters on Enemy NPC", EnemyFloaters);
-		fontHelp.Draw(760, 150 + 15 * 12, fontColor, "[%i] [Alt 4] Floaters on Enemy Players", EnemyPlayerFloaters);
+		fontHelp.Draw(760, 150 + 15 * 8, fontColor, "[%i] [Alt F] Floaters", Floaters);
+		fontHelp.Draw(760, 150 + 15 * 9, fontColor, "[%i] [Alt 0] Floaters Type (Distance or Health)", FloatersType);
+		fontHelp.Draw(760, 150 + 15 * 10, fontColor, "[%i] [Alt 1] Floaters on Ally NPC", AllyFloaters);
+		fontHelp.Draw(760, 150 + 15 * 11, fontColor, "[%i] [Alt 2] Floaters on Ally Players", AllyPlayerFloaters);
+		fontHelp.Draw(760, 150 + 15 * 12, fontColor, "[%i] [Alt 3] Floaters on Enemy NPC", EnemyFloaters);
+		fontHelp.Draw(760, 150 + 15 * 13, fontColor, "[%i] [Alt 4] Floaters on Enemy Players", EnemyPlayerFloaters);
 
-		fontHelp.Draw(760, 150 + 15 * 14, fontColor, "[%i] [Alt S] Selected Health/Percent", SelectedHealth);
-		fontHelp.Draw(760, 150 + 15 * 15, fontColor, "[%i] [Alt R] Selected Range", DistanceToSelected);
-		fontHelp.Draw(760, 150 + 15 * 16, fontColor, "[%i] [Alt I] Selected Debug", SelectedDebug);
+		fontHelp.Draw(760, 150 + 15 * 15, fontColor, "[%i] [Alt S] Selected Health/Percent", SelectedHealth);
+		fontHelp.Draw(760, 150 + 15 * 16, fontColor, "[%i] [Alt R] Selected Range", DistanceToSelected);
+		fontHelp.Draw(760, 150 + 15 * 17, fontColor, "[%i] [Alt I] Selected Debug", SelectedDebug);
 
-		fontHelp.Draw(760, 150 + 15 * 18, fontColor, "[%i] [Alt H] Self Health", SelfHealth);
-		fontHelp.Draw(760, 150 + 15 * 19, fontColor, "[%i] [Alt P] Self Health Percent", SelfHealthPercent);
+		fontHelp.Draw(760, 150 + 15 * 19, fontColor, "[%i] [Alt H] Self Health", SelfHealth);
+		fontHelp.Draw(760, 150 + 15 * 20, fontColor, "[%i] [Alt P] Self Health Percent", SelfHealthPercent);
 
-		fontHelp.Draw(760, 150 + 15 * 21, fontColor, "[%i] [Alt T] Kill Timer", KillTime);
+		fontHelp.Draw(760, 150 + 15 * 22, fontColor, "[%i] [Alt T] Kill Timer", KillTime);
 	}
 
 	if (DpsMeter)
 	{
-		if (agLocked.IsValid())
-			dpsThis = agLocked.GetAgentId();
-		else
-			dpsThis = NULL;
+		if (!DpsLock)
+		{
+			if (agLocked.IsValid())
+			{
+				dpsThis = agLocked.GetAgentId();
+			}
+			else
+			{
+				dpsThis = NULL;
+			}
+		}
+		
+			
 					
 		int dp1s = 0;
 		std::stringstream dp1S;
@@ -174,7 +185,7 @@ void cbESP()
 			
 			font.Draw(400, 8 + 15 * 5, fontColor, "cat: %i / type: %i", agLocked.GetCategory(), agLocked.GetType());
 
-			font.Draw(400, 8 + 15 * 6, fontColor, "dpsBuffer: %i", dpsBuffer);
+			//font.Draw(400, 8 + 15 * 6, fontColor, "dpsBuffer: %i", dpsBuffer);
 		}
 	}
 
@@ -366,29 +377,30 @@ void HotKey()
 	RegisterHotKey(NULL, 0, MOD_ALT | MOD_NOREPEAT, VK_OEM_2); // Help
 
 	// DPS Meter
-	RegisterHotKey(NULL, 1, MOD_ALT | MOD_NOREPEAT, 0x44); // DPS Meter
-	RegisterHotKey(NULL, 2, MOD_ALT | MOD_NOREPEAT, 0x42); // DPS Meter Debug
-	RegisterHotKey(NULL, 3, MOD_ALT | MOD_NOREPEAT, 0x4E); // DPS Meter Allow Negative DPS
+	RegisterHotKey(NULL, 10, MOD_ALT | MOD_NOREPEAT, 0x44); // DPS Meter
+	RegisterHotKey(NULL, 11, MOD_ALT | MOD_NOREPEAT, 0x42); // DPS Meter Debug
+	RegisterHotKey(NULL, 12, MOD_ALT | MOD_NOREPEAT, 0x4E); // DPS Meter Allow Negative DPS
+	RegisterHotKey(NULL, 13, MOD_ALT | MOD_NOREPEAT, 0x4C); // DPS Meter LockToCurrentlySelected
 
 	// Floaters
-	RegisterHotKey(NULL, 4, MOD_ALT | MOD_NOREPEAT, 0x46); // Floaters
-	RegisterHotKey(NULL, 5, MOD_ALT | MOD_NOREPEAT, 0x30); // Floaters Type (Health/Distance)
-	RegisterHotKey(NULL, 6, MOD_ALT | MOD_NOREPEAT, 0x31); // Floaters Ally NPC
-	RegisterHotKey(NULL, 7, MOD_ALT | MOD_NOREPEAT, 0x32); // Floaters Ally Players
-	RegisterHotKey(NULL, 8, MOD_ALT | MOD_NOREPEAT, 0x33); // Floaters Enemy NPC
-	RegisterHotKey(NULL, 9, MOD_ALT | MOD_NOREPEAT, 0x34); // Flaoters Enemy Players
+	RegisterHotKey(NULL, 20, MOD_ALT | MOD_NOREPEAT, 0x46); // Floaters
+	RegisterHotKey(NULL, 21, MOD_ALT | MOD_NOREPEAT, 0x30); // Floaters Type (Health/Distance)
+	RegisterHotKey(NULL, 22, MOD_ALT | MOD_NOREPEAT, 0x31); // Floaters Ally NPC
+	RegisterHotKey(NULL, 23, MOD_ALT | MOD_NOREPEAT, 0x32); // Floaters Ally Players
+	RegisterHotKey(NULL, 24, MOD_ALT | MOD_NOREPEAT, 0x33); // Floaters Enemy NPC
+	RegisterHotKey(NULL, 25, MOD_ALT | MOD_NOREPEAT, 0x34); // Flaoters Enemy Players
 
 	// Selected
-	RegisterHotKey(NULL, 10, MOD_ALT | MOD_NOREPEAT, 0x53); // Selected Health/Percent
-	RegisterHotKey(NULL, 11, MOD_ALT | MOD_NOREPEAT, 0x52); // Selected Range
-	RegisterHotKey(NULL, 12, MOD_ALT | MOD_NOREPEAT, 0x49); // Selected Debug
+	RegisterHotKey(NULL, 30, MOD_ALT | MOD_NOREPEAT, 0x53); // Selected Health/Percent
+	RegisterHotKey(NULL, 31, MOD_ALT | MOD_NOREPEAT, 0x52); // Selected Range
+	RegisterHotKey(NULL, 32, MOD_ALT | MOD_NOREPEAT, 0x49); // Selected Debug
 	
 	// Self
-	RegisterHotKey(NULL, 13, MOD_ALT | MOD_NOREPEAT, 0x48); // Self Health
-	RegisterHotKey(NULL, 14, MOD_ALT | MOD_NOREPEAT, 0x50); // Self Health Percent
+	RegisterHotKey(NULL, 40, MOD_ALT | MOD_NOREPEAT, 0x48); // Self Health
+	RegisterHotKey(NULL, 41, MOD_ALT | MOD_NOREPEAT, 0x50); // Self Health Percent
 
 	// Kill Timer
-	RegisterHotKey(NULL, 15, MOD_ALT | MOD_NOREPEAT, 0x4B); // Kill Timer
+	RegisterHotKey(NULL, 50, MOD_ALT | MOD_NOREPEAT, 0x4B); // Kill Timer
 
 	MSG msg;
 	while (GetMessage(&msg, 0, 0, 0))
@@ -401,29 +413,30 @@ void HotKey()
 			if (msg.wParam == 0) Help = !Help;
 
 			// DPS Meter
-			if (msg.wParam == 1) DpsMeter = !DpsMeter;
-			if (msg.wParam == 2) DpsDebug = !DpsDebug;
-			if (msg.wParam == 3) AllowNegativeDps = !AllowNegativeDps;
+			if (msg.wParam == 10) DpsMeter = !DpsMeter;
+			if (msg.wParam == 11) DpsDebug = !DpsDebug;
+			if (msg.wParam == 12) AllowNegativeDps = !AllowNegativeDps;
+			if (msg.wParam == 13) DpsLock = !DpsLock;
 
 			// Floaters
-			if (msg.wParam == 4) Floaters = !Floaters;
-			if (msg.wParam == 5) FloatersType = !FloatersType;
-			if (msg.wParam == 6) AllyFloaters = !AllyFloaters;
-			if (msg.wParam == 7) AllyPlayerFloaters = !AllyPlayerFloaters;
-			if (msg.wParam == 8) EnemyFloaters = !EnemyFloaters;
-			if (msg.wParam == 9) EnemyPlayerFloaters = !EnemyPlayerFloaters;
+			if (msg.wParam == 20) Floaters = !Floaters;
+			if (msg.wParam == 21) FloatersType = !FloatersType;
+			if (msg.wParam == 22) AllyFloaters = !AllyFloaters;
+			if (msg.wParam == 23) AllyPlayerFloaters = !AllyPlayerFloaters;
+			if (msg.wParam == 24) EnemyFloaters = !EnemyFloaters;
+			if (msg.wParam == 25) EnemyPlayerFloaters = !EnemyPlayerFloaters;
 
 			// Selected
-			if (msg.wParam == 10) { SelectedHealth = !SelectedHealth; SelectedHealthPercent = !SelectedHealthPercent; }
-			if (msg.wParam == 11) DistanceToSelected = !DistanceToSelected;
-			if (msg.wParam == 12) SelectedDebug = !SelectedDebug;
+			if (msg.wParam == 30) { SelectedHealth = !SelectedHealth; SelectedHealthPercent = !SelectedHealthPercent; }
+			if (msg.wParam == 31) DistanceToSelected = !DistanceToSelected;
+			if (msg.wParam == 32) SelectedDebug = !SelectedDebug;
 
 			// Self
-			if (msg.wParam == 13) SelfHealth = !SelfHealth;
-			if (msg.wParam == 14) SelfHealthPercent = !SelfHealthPercent;
+			if (msg.wParam == 40) SelfHealth = !SelfHealth;
+			if (msg.wParam == 41) SelfHealthPercent = !SelfHealthPercent;
 
 			// Kill Timer
-			if (msg.wParam == 15) KillTime = !KillTime;
+			if (msg.wParam == 50) KillTime = !KillTime;
 
 			
 		}

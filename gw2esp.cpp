@@ -4,34 +4,51 @@ Compile to a DLL and inject into your running gw2.exe process
 #include <locale>
 #include <iomanip>
 #include <sstream>
+#include <Windows.h>
+#include <boost/circular_buffer.hpp> // Boost v1.55 library
+#include <numeric>
+#include <assert.h>
+
 #include "gw2lib.h"
+
 
 using namespace GW2LIB;
 
 // ESP Elements
-const bool SelectedHealth = true;
-const bool SelectedHealthPercent = true;
-const bool DistanceToSelected = false;
-const bool SelectedDebug = false;
+bool Help = false;
 
-const bool SelfHealth = false;
-const bool SelfHealthPercent = true;
-const bool DpsMeter = true;
-const bool KillTime = false;
+bool SelectedHealth = true;
+bool SelectedHealthPercent = true;
+bool DistanceToSelected = false;
+bool SelectedDebug = false;
 
-const bool Floaters = true;
-const int  FloatersRange = 6000;
-const bool EnemyFloaters = false;
-const bool AllyFloaters = false;
-const bool EnemyPlayerFloaters = true;
-const bool AllyPlayerFloaters = false;
+bool SelfHealth = false;
+bool SelfHealthPercent = true;
+bool DpsMeter = true;
+bool DpsDebug = false;
+bool AllowNegativeDps = false;
+bool KillTime = false;
 
+bool Floaters = false;
+bool FloatersType = true;
+int  FloatersRange = 6000;
+bool EnemyFloaters = true;
+bool AllyFloaters = true;
+bool EnemyPlayerFloaters = true;
+bool AllyPlayerFloaters = true;
 
+// Global Vars
+Font font;
+Font fontHelp;
+static const DWORD fontColor = 0xffffffff;
+boost::circular_buffer<int> dpsBuffer(50);
+int dpsThis = NULL;
+
+// Global Functions
 float dist(Vector3 p1, Vector3 p2)
 {
 	return sqrt(pow(p1.x - p2.x, 2) + pow(p1.y - p2.y, 2) + pow(p1.z - p2.z, 2));
 }
-
 template<class T>
 std::string FormatWithCommas(T value)
 {
@@ -41,17 +58,88 @@ std::string FormatWithCommas(T value)
 	return ss.str();
 }
 
-Font font;
-static const DWORD fontColor = 0xffffffff;
-int HealthHistory[23] {};
-int KillTimeHistory[4] {};
-
 void cbESP()
 {
 	Character me = GetOwnCharacter();
 	Vector3 mypos = me.GetAgent().GetPos();
-
 	Agent agLocked = GetLockedSelection();
+
+	if (Help)
+	{
+		fontHelp.Draw(760, 150 + 15 * 1, fontColor, "[%i] [Alt /] Toggle this Help screen", SelectedHealth);
+
+		fontHelp.Draw(760, 150 + 15 * 3, fontColor, "[%i] [Alt D] DPS Meter", DpsMeter);
+		fontHelp.Draw(760, 150 + 15 * 4, fontColor, "[%i] [Alt B] DPS Meter Debug", DpsDebug);
+		fontHelp.Draw(760, 150 + 15 * 5, fontColor, "[%i] [Alt N] DPS Meter AllowNegativeDPS", AllowNegativeDps);
+
+		fontHelp.Draw(760, 150 + 15 * 7, fontColor, "[%i] [Alt F] Floaters", Floaters);
+		fontHelp.Draw(760, 150 + 15 * 8, fontColor, "[%i] [Alt 0] Floaters Type (Distance or Health)", FloatersType);
+		fontHelp.Draw(760, 150 + 15 * 9, fontColor, "[%i] [Alt 1] Floaters on Ally NPC", AllyFloaters);
+		fontHelp.Draw(760, 150 + 15 * 10, fontColor, "[%i] [Alt 2] Floaters on Ally Players", AllyPlayerFloaters);
+		fontHelp.Draw(760, 150 + 15 * 11, fontColor, "[%i] [Alt 3] Floaters on Enemy NPC", EnemyFloaters);
+		fontHelp.Draw(760, 150 + 15 * 12, fontColor, "[%i] [Alt 4] Floaters on Enemy Players", EnemyPlayerFloaters);
+
+		fontHelp.Draw(760, 150 + 15 * 14, fontColor, "[%i] [Alt S] Selected Health/Percent", SelectedHealth);
+		fontHelp.Draw(760, 150 + 15 * 15, fontColor, "[%i] [Alt R] Selected Range", DistanceToSelected);
+		fontHelp.Draw(760, 150 + 15 * 16, fontColor, "[%i] [Alt I] Selected Debug", SelectedDebug);
+
+		fontHelp.Draw(760, 150 + 15 * 18, fontColor, "[%i] [Alt H] Self Health", SelfHealth);
+		fontHelp.Draw(760, 150 + 15 * 19, fontColor, "[%i] [Alt P] Self Health Percent", SelfHealthPercent);
+
+		fontHelp.Draw(760, 150 + 15 * 21, fontColor, "[%i] [Alt T] Kill Timer", KillTime);
+	}
+
+	if (DpsMeter)
+	{
+		if (agLocked.IsValid())
+			dpsThis = agLocked.GetAgentId();
+		else
+			dpsThis = NULL;
+					
+		int dp1s = 0;
+		std::stringstream dp1S;
+		dp1S << "DPS 1s: ";
+		if (!dpsBuffer.empty())
+		{
+			for (int i = 0; i < 10; i++)
+				dp1s += dpsBuffer[i];
+			dp1S << FormatWithCommas(dp1s);
+		}
+		else
+			dp1S << "...";
+
+		int dp5s = 0;
+		std::stringstream dp5S;
+		dp5S << "DPS 5s: ";
+		if (!dpsBuffer.empty())
+		{
+			for (int i = 0; i < 50; i++)
+				dp5s += dpsBuffer[i];
+			dp5s = int(dp5s / 5);
+			dp5S << FormatWithCommas(dp5s);
+		}
+		else
+			dp5S << "...";
+		
+		font.Draw(1250, 8 + 15 * 0, fontColor, dp1S.str());
+		font.Draw(1250, 8 + 15 * 1, fontColor, dp5S.str());
+
+		if (DpsDebug)
+		{
+			for (int i = 0; i < 50; i++)
+				font.Draw(1250, 8 + 15 * (float(i) + 3), fontColor, "DMG/100ms: %i", dpsBuffer[i]);
+		}
+		
+	}
+
+	if (KillTime)
+	{
+		Agent agLocked = GetLockedSelection();
+		Character chrLocked = agLocked.GetCharacter();
+
+		//font.Draw(1250, 8 + 15 * 2, fontColor, "Timer: %i", KillTimeHistory[0]);
+	}
+
 	if (agLocked.m_ptr)
 	{
 		Character chrLocked = agLocked.GetCharacter();
@@ -86,84 +174,15 @@ void cbESP()
 			
 			font.Draw(400, 8 + 15 * 5, fontColor, "cat: %i / type: %i", agLocked.GetCategory(), agLocked.GetType());
 
-			//font.Draw(400, 8 + 15 * 6, fontColor, "data: %08X", (void**)agLocked.m_ptr);
+			font.Draw(400, 8 + 15 * 6, fontColor, "dpsBuffer: %i", dpsBuffer);
 		}
-
-
-		
-		if (DpsMeter)
-		{
-			if (HealthHistory[23] != agLocked.GetAgentId())
-				memset(HealthHistory, NULL, sizeof(HealthHistory));
-
-			int seconds;
-			seconds = int(GetTickCount() / 250);
-
-			if (HealthHistory[22] < seconds)
-			{
-				for (int i = 20; i > 0; i--)
-					HealthHistory[i] = HealthHistory[i - 1];	
-
-				HealthHistory[0] = int(chrLocked.GetCurrentHealth());
-				HealthHistory[22] = seconds;
-				HealthHistory[23] = agLocked.GetAgentId();
-			}
-
-			int dps;
-			std::stringstream Dps;
-
-			// DPS over 1s
-			if (HealthHistory[4] != NULL) {
-				dps = int((HealthHistory[4] - HealthHistory[1]));
-				if (dps < 0) dps = 0;
-				Dps << "DPS1s: " << FormatWithCommas(dps);
-			}
-			else{ Dps << "DPS1s: ..."; }
-			font.Draw(1250, 8 + 15 * 0, fontColor, Dps.str());
-			Dps.str("");
-
-			// DPS over 5s
-			if (HealthHistory[4 * 5] != NULL) {
-				dps = int((HealthHistory[4 * 5] - HealthHistory[1]) / 5);
-				if (dps < 0) dps = 0;
-				Dps << "DPS5s: " << FormatWithCommas(dps);
-			}else{ Dps << "DPS5s: ..."; }
-			font.Draw(1250, 8 + 15 * 1, fontColor, Dps.str());
-			Dps.str("");
-		}
-	}
-
-	if (KillTime)
-	{
-		Agent agLocked = GetLockedSelection();
-		Character chrLocked = agLocked.GetCharacter();
-		
-		
-		if (chrLocked.m_ptr)
-		{
-			if (KillTimeHistory[3] && KillTimeHistory[3] != agLocked.GetAgentId())
-				memset(KillTimeHistory, 0, sizeof(KillTimeHistory));
-
-			if (chrLocked.GetCurrentHealth() == chrLocked.GetMaxHealth())
-				KillTimeHistory[0] = GetTickCount();
-
-			if (chrLocked.GetCurrentHealth() > 0)
-				KillTimeHistory[1] = GetTickCount();
-
-			if (KillTimeHistory[0] && KillTimeHistory[1])
-				KillTimeHistory[2] = KillTimeHistory[1] - KillTimeHistory[0];
-
-			KillTimeHistory[3] = agLocked.GetAgentId();
-		}
-		
-		font.Draw(1250, 8 + 15 * 2, fontColor, "Timer: %i", KillTimeHistory[0]);
 	}
 
 	if (SelfHealth | SelfHealthPercent)
 	{
 		std::stringstream health;
 		if (SelfHealth) health << "Self: " << FormatWithCommas(int(me.GetCurrentHealth())) << " / " << FormatWithCommas(int(me.GetMaxHealth()));
-		font.Draw(1200, 8, fontColor, health.str());
+		font.Draw(775, 8, fontColor, health.str());
 
 		if (SelfHealthPercent) font.Draw(943, 973, fontColor, "%i", int(me.GetCurrentHealth() / me.GetMaxHealth() * 100));
 	}
@@ -191,9 +210,19 @@ void cbESP()
 					{
 						if (EnemyFloaters && (chr.GetAttitude() == GW2::ATTITUDE_HOSTILE || chr.GetAttitude() == GW2::ATTITUDE_INDIFFERENT))
 						{
-							std::stringstream cHealth;
-							cHealth << FormatWithCommas(int(chr.GetCurrentHealth()));
-							font.Draw(x - 30, y - 15, fontColor, cHealth.str());
+							if (FloatersType) // Health
+							{
+								std::stringstream cHealth;
+								cHealth << FormatWithCommas(int(chr.GetCurrentHealth()));
+								font.Draw(x - 30, y - 15, fontColor, cHealth.str());
+							}
+							else // Distance
+							{
+								Vector3 pos = ag.GetPos();
+								std::stringstream distance;
+								distance << FormatWithCommas(int(dist(mypos, pos)));
+								font.Draw(x - 30, y - 15, fontColor, distance.str());
+							}
 
 							DWORD color;
 							color = 0x44ff3300;
@@ -204,9 +233,19 @@ void cbESP()
 
 						if (AllyFloaters && (chr.GetAttitude() == GW2::ATTITUDE_FRIENDLY || chr.GetAttitude() == GW2::ATTITUDE_NEUTRAL))
 						{
-							std::stringstream cHealth;
-							cHealth << FormatWithCommas(int(chr.GetCurrentHealth()));
-							font.Draw(x - 30, y - 15, fontColor, cHealth.str());
+							if (FloatersType) // Health
+							{
+								std::stringstream cHealth;
+								cHealth << FormatWithCommas(int(chr.GetCurrentHealth()));
+								font.Draw(x - 30, y - 15, fontColor, cHealth.str());
+							}
+							else // Distance
+							{
+								Vector3 pos = ag.GetPos();
+								std::stringstream distance;
+								distance << FormatWithCommas(int(dist(mypos, pos)));
+								font.Draw(x - 30, y - 15, fontColor, distance.str());
+							}
 
 							DWORD color;
 							color = 0x4433ff00;
@@ -219,9 +258,19 @@ void cbESP()
 					{
 						if (AllyPlayerFloaters && chr.GetAttitude() == GW2::ATTITUDE_FRIENDLY)
 						{
-							std::stringstream cHealth;
-							cHealth << FormatWithCommas(int(chr.GetCurrentHealth()));
-							font.Draw(x - 30, y - 15, fontColor, cHealth.str());
+							if (FloatersType) // Health
+							{
+								std::stringstream cHealth;
+								cHealth << FormatWithCommas(int(chr.GetCurrentHealth()));
+								font.Draw(x - 30, y - 15, fontColor, cHealth.str());
+							}
+							else // Distance
+							{
+								Vector3 pos = ag.GetPos();
+								std::stringstream distance;
+								distance << FormatWithCommas(int(dist(mypos, pos)));
+								font.Draw(x - 30, y - 15, fontColor, distance.str());
+							}
 
 							DWORD color;
 							color = 0x4433ff00;
@@ -231,7 +280,7 @@ void cbESP()
 
 						if (EnemyPlayerFloaters && chr.GetAttitude() == GW2::ATTITUDE_HOSTILE)
 						{
-							if (0) // Health
+							if (FloatersType) // Health
 							{
 								std::stringstream cHealth;
 								cHealth << FormatWithCommas(int(chr.GetCurrentHealth()));
@@ -257,15 +306,139 @@ void cbESP()
 	}
 }
 
+void DpsBuffer()
+{
+	int dpsCurrent = NULL;
+	float previousHealth = NULL;
 
+	while (true){
+		if (dpsThis)
+		{
+			// new Agent, wipe buffer
+			if (dpsCurrent != dpsThis){
+				previousHealth = NULL;
+				for (int i = 0; i < 50; i++)
+					dpsBuffer.push_front(0);
+				dpsBuffer.clear();
+			}
 
+			Agent ag;
+			while (ag.BeNext())
+			{
+				Character ch = ag.GetCharacter();
+				if (!ch.IsValid())
+					continue;
 
+				if (dpsThis == 0 || ag.GetAgentId() != dpsThis)
+					continue;
+
+				if (!previousHealth)
+					previousHealth = ch.GetCurrentHealth();
+				else
+				{
+					if (AllowNegativeDps || previousHealth > ch.GetCurrentHealth())
+						dpsBuffer.push_front(int(previousHealth - ch.GetCurrentHealth()));
+					else
+						dpsBuffer.push_front(0);
+
+					previousHealth = ch.GetCurrentHealth();
+				}
+
+				break;
+			}
+			dpsCurrent = dpsThis;
+		}
+		else
+		{
+			previousHealth = NULL;
+			for (int i = 0; i < 50; i++)
+				dpsBuffer.push_front(0);
+			dpsBuffer.clear();
+		}
+
+		Sleep(100);
+	}
+}
+
+void HotKey()
+{
+	// Help
+	RegisterHotKey(NULL, 0, MOD_ALT | MOD_NOREPEAT, VK_OEM_2); // Help
+
+	// DPS Meter
+	RegisterHotKey(NULL, 1, MOD_ALT | MOD_NOREPEAT, 0x44); // DPS Meter
+	RegisterHotKey(NULL, 2, MOD_ALT | MOD_NOREPEAT, 0x42); // DPS Meter Debug
+	RegisterHotKey(NULL, 3, MOD_ALT | MOD_NOREPEAT, 0x4E); // DPS Meter Allow Negative DPS
+
+	// Floaters
+	RegisterHotKey(NULL, 4, MOD_ALT | MOD_NOREPEAT, 0x46); // Floaters
+	RegisterHotKey(NULL, 5, MOD_ALT | MOD_NOREPEAT, 0x30); // Floaters Type (Health/Distance)
+	RegisterHotKey(NULL, 6, MOD_ALT | MOD_NOREPEAT, 0x31); // Floaters Ally NPC
+	RegisterHotKey(NULL, 7, MOD_ALT | MOD_NOREPEAT, 0x32); // Floaters Ally Players
+	RegisterHotKey(NULL, 8, MOD_ALT | MOD_NOREPEAT, 0x33); // Floaters Enemy NPC
+	RegisterHotKey(NULL, 9, MOD_ALT | MOD_NOREPEAT, 0x34); // Flaoters Enemy Players
+
+	// Selected
+	RegisterHotKey(NULL, 10, MOD_ALT | MOD_NOREPEAT, 0x53); // Selected Health/Percent
+	RegisterHotKey(NULL, 11, MOD_ALT | MOD_NOREPEAT, 0x52); // Selected Range
+	RegisterHotKey(NULL, 12, MOD_ALT | MOD_NOREPEAT, 0x49); // Selected Debug
+	
+	// Self
+	RegisterHotKey(NULL, 13, MOD_ALT | MOD_NOREPEAT, 0x48); // Self Health
+	RegisterHotKey(NULL, 14, MOD_ALT | MOD_NOREPEAT, 0x50); // Self Health Percent
+
+	// Kill Timer
+	RegisterHotKey(NULL, 15, MOD_ALT | MOD_NOREPEAT, 0x4B); // Kill Timer
+
+	MSG msg;
+	while (GetMessage(&msg, 0, 0, 0))
+	{
+		PeekMessage(&msg, 0, 0, 0, 0x0001);
+		switch (msg.message)
+		{
+		case WM_HOTKEY:
+			// Help
+			if (msg.wParam == 0) Help = !Help;
+
+			// DPS Meter
+			if (msg.wParam == 1) DpsMeter = !DpsMeter;
+			if (msg.wParam == 2) DpsDebug = !DpsDebug;
+			if (msg.wParam == 3) AllowNegativeDps = !AllowNegativeDps;
+
+			// Floaters
+			if (msg.wParam == 4) Floaters = !Floaters;
+			if (msg.wParam == 5) FloatersType = !FloatersType;
+			if (msg.wParam == 6) AllyFloaters = !AllyFloaters;
+			if (msg.wParam == 7) AllyPlayerFloaters = !AllyPlayerFloaters;
+			if (msg.wParam == 8) EnemyFloaters = !EnemyFloaters;
+			if (msg.wParam == 9) EnemyPlayerFloaters = !EnemyPlayerFloaters;
+
+			// Selected
+			if (msg.wParam == 10) { SelectedHealth = !SelectedHealth; SelectedHealthPercent = !SelectedHealthPercent; }
+			if (msg.wParam == 11) DistanceToSelected = !DistanceToSelected;
+			if (msg.wParam == 12) SelectedDebug = !SelectedDebug;
+
+			// Self
+			if (msg.wParam == 13) SelfHealth = !SelfHealth;
+			if (msg.wParam == 14) SelfHealthPercent = !SelfHealthPercent;
+
+			// Kill Timer
+			if (msg.wParam == 15) KillTime = !KillTime;
+
+			
+		}
+	}
+}
 void CodeMain(){
-
+	NewThread(DpsBuffer);
+	NewThread(HotKey);
 	EnableEsp(cbESP);
 	
 	if (!font.Init(18, "Verdana"))
-		DbgOut("could not create font");
+		DbgOut("could not init Verdana font");
+
+	if (!fontHelp.Init(18, "Courier New"))
+		DbgOut("could not init Courier New font");
 }
 
 GW2LIBInit(CodeMain);

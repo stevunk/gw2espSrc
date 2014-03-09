@@ -547,7 +547,7 @@ void CodeMain(){
 	EnableEsp(cbESP);
 	
 	if (!font.Init(18, "Courier New"))
-		DbgOut("could not init Verdana font");
+		DbgOut("could not init Courier New font");
 }
 
 GW2LIBInit(CodeMain);

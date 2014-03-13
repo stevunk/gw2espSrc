@@ -21,8 +21,10 @@ bool DpsDebug = false;
 bool AllowNegativeDps = false;
 bool DpsLock = false;
 
-int  FloatersRange = 2000;
+int  FloatersRange = 3000;
 bool Floaters = false;
+bool FloaterStats = false;
+bool FloaterClasses = false;
 bool FloatersType = true;
 bool EnemyFloaters = true;
 bool AllyFloaters = true;
@@ -42,9 +44,11 @@ bool AllyPlayers = false;
 bool AllyPlayersRange = false;
 
 // Global Vars
+HWND hwnd = FindWindowEx(NULL, NULL, L"Guild Wars 2", NULL);
 Font font;
 double fontW = 10;
 static const DWORD fontColor = 0xffffffff;
+static const DWORD backColor = 0xff000000;
 boost::circular_buffer<int> dpsBuffer(50);
 int dpsThis = NULL;
 Vector3 MeasureDistanceStart = { 0, 0, 0 };
@@ -62,6 +66,41 @@ std::string FormatWithCommas(T value)
 	ss << std::fixed << value;
 	return ss.str();
 }
+SIZE ssSize(std::string ss, int height)
+{
+	HDC hdc = GetDC(hwnd);
+	HFONT hFont = CreateFont(height, 0, 0, 0, 600, FALSE, FALSE, FALSE,
+		DEFAULT_CHARSET, OUT_RASTER_PRECIS, CLIP_TT_ALWAYS, NONANTIALIASED_QUALITY,
+		DEFAULT_PITCH, L"Verdana");
+	HFONT hFontOld = (HFONT)SelectObject(hdc, hFont);
+	try
+	{
+		ss.replace(ss.find("%"), 1, "");
+	}
+	catch (const std::out_of_range& oor) {
+		// pass
+	}
+
+	SIZE size;
+	GetTextExtentPoint32A(hdc, ss.c_str(), ss.length(), &size);
+
+	if (0) // draw debug
+	{
+		RECT rcFont = { 500 + 0, 50 + 0, 500 + size.cx, 50 + size.cy };
+		DrawTextA(hdc, ss.c_str(), ss.length(), &rcFont, DT_LEFT);
+	}
+	
+	DeleteObject(hFont);
+	ReleaseDC(hwnd, hdc);
+
+	size_t count;
+	count = std::count(ss.begin(), ss.end(), ':'); size.cx -= count * 2;
+	count = std::count(ss.begin(), ss.end(), ' '); size.cx -= count * 2;
+	count = std::count(ss.begin(), ss.end(), '['); size.cx -= count * 1;
+	count = std::count(ss.begin(), ss.end(), ']'); size.cx -= count * 1;
+
+	return size;
+}
 
 void cbESP()
 {
@@ -71,33 +110,43 @@ void cbESP()
 
 	if (Help)
 	{
+		SIZE size = ssSize("[%i] [Alt L] DPS Meter LockOnCurrentlySelected", 16);
 		float x = int(GetWindowWidth() / 2 - 45 * fontW / 2);
-		font.Draw(x, 150 + 15 * 1, fontColor, "[%i] [Alt /] Toggle this Help screen", SelectedHealth);
+		float y = 150;
+		int xPad = 5; int yPad = 2;
 
-		font.Draw(x, 150 + 15 * 3, fontColor, "[%i] [Alt D] DPS Meter", DpsMeter);
-		font.Draw(x, 150 + 15 * 4, fontColor, "[%i] [Alt B] DPS Meter Debug", DpsDebug);
-		font.Draw(x, 150 + 15 * 5, fontColor, "[%i] [Alt N] DPS Meter AllowNegativeDPS", AllowNegativeDps);
-		font.Draw(x, 150 + 15 * 6, fontColor, "[%i] [Alt L] DPS Meter LockOnCurrentlySelected", DpsLock);
+		DrawRectFilled(x - xPad, y + 15 - yPad, size.cx + xPad * 2, size.cy*27 + yPad * 4, backColor - 0x44000000);
+			  DrawRect(x - xPad, y + 15 - yPad, size.cx + xPad * 2, size.cy*27 + yPad * 4, 0xff444444);
 
-		font.Draw(x, 150 + 15 * 8, fontColor, "[%i] [Alt F] Floaters", Floaters);
-		font.Draw(x, 150 + 15 * 9, fontColor, "[-] [Alt +] Floaters Range + (%i)", FloatersRange);
-		font.Draw(x, 150 + 15 * 10, fontColor, "[-] [Alt -] Floaters Range - (%i)", FloatersRange);
-		font.Draw(x, 150 + 15 * 11, fontColor, "[%i] [Alt 0] Floaters Type (Distance or Health)", FloatersType);
-		font.Draw(x, 150 + 15 * 12, fontColor, "[%i] [Alt 1] Floaters on Ally NPC", AllyFloaters);
-		font.Draw(x, 150 + 15 * 13, fontColor, "[%i] [Alt 2] Floaters on Ally Players", AllyPlayerFloaters);
-		font.Draw(x, 150 + 15 * 14, fontColor, "[%i] [Alt 3] Floaters on Enemy NPC", EnemyFloaters);
-		font.Draw(x, 150 + 15 * 15, fontColor, "[%i] [Alt 4] Floaters on Enemy Players", EnemyPlayerFloaters);
+		font.Draw(x, y + 15 * 1, fontColor, "[%i] [Alt /] Toggle this Help screen", SelectedHealth);
 
-		font.Draw(x, 150 + 15 * 17, fontColor, "[%i] [Alt S] Selected Health/Percent", SelectedHealth);
-		font.Draw(x, 150 + 15 * 18, fontColor, "[%i] [Alt R] Selected Range", DistanceToSelected);
-		font.Draw(x, 150 + 15 * 19, fontColor, "[%i] [Alt I] Selected Debug", SelectedDebug);
+		font.Draw(x, y + 15 * 3, fontColor,  "[%i] [Alt D] DPS Meter", DpsMeter);
+		font.Draw(x, y + 15 * 4, fontColor,  "[%i] [Alt B] DPS Meter Debug", DpsDebug);
+		font.Draw(x, y + 15 * 5, fontColor,  "[%i] [Alt N] DPS Meter AllowNegativeDPS", AllowNegativeDps);
+		font.Draw(x, y + 15 * 6, fontColor,  "[%i] [Alt L] DPS Meter LockOnCurrentlySelected", DpsLock);
 
-		font.Draw(x, 150 + 15 * 21, fontColor, "[%i] [Alt P] Self Health Percent", SelfHealthPercent);
+		font.Draw(x, y + 15 * 8, fontColor,  "[%i] [Alt F] Floaters", Floaters);
+		font.Draw(x, y + 15 * 9, fontColor,  "[-] [Alt +] Floaters Range + (%i)", FloatersRange);
+		font.Draw(x, y + 15 * 10, fontColor, "[-] [Alt -] Floaters Range - (%i)", FloatersRange);
+		font.Draw(x, y + 15 * 11, fontColor, "[%i] [Alt 9] Floater Count", FloaterStats);
+		font.Draw(x, y + 15 * 12, fontColor, "[%i] [Alt 8] Floater Classes (ally players)", FloaterClasses);
+		font.Draw(x, y + 15 * 13, fontColor, "[%i] [Alt 0] Floaters Type (Distance or Health)", FloatersType);
 
-		font.Draw(x, 150 + 15 * 23, fontColor, "[%i] [Alt T] Kill Timer", KillTime);
-		font.Draw(x, 150 + 15 * 24, fontColor, "[%i] [Alt M] Measure Distance", MeasureDistance);
-		font.Draw(x, 150 + 15 * 25, fontColor, "[%i] [Alt C] Ally Player Info", AllyPlayers);
-		font.Draw(x, 150 + 15 * 26, fontColor, "[%i] [Alt V] Ally Player Info (show distance)", AllyPlayersRange);
+		font.Draw(x, y + 15 * 15, fontColor, "[%i] [Alt 1] Floaters on Ally NPC", AllyFloaters);
+		font.Draw(x, y + 15 * 16, fontColor, "[%i] [Alt 2] Floaters on Enemy NPC", EnemyFloaters);
+		font.Draw(x, y + 15 * 17, fontColor, "[%i] [Alt 3] Floaters on Ally Players", AllyPlayerFloaters);
+		font.Draw(x, y + 15 * 18, fontColor, "[%i] [Alt 4] Floaters on Enemy Players", EnemyPlayerFloaters);
+
+		font.Draw(x, y + 15 * 20, fontColor, "[%i] [Alt S] Selected Health/Percent", SelectedHealth);
+		font.Draw(x, y + 15 * 21, fontColor, "[%i] [Alt R] Selected Range", DistanceToSelected);
+		font.Draw(x, y + 15 * 22, fontColor, "[%i] [Alt I] Selected Debug", SelectedDebug);
+
+		font.Draw(x, y + 15 * 24, fontColor, "[%i] [Alt P] Self Health Percent", SelfHealthPercent);
+
+		font.Draw(x, y + 15 * 26, fontColor, "[%i] [Alt T] Kill Timer", KillTime);
+		font.Draw(x, y + 15 * 27, fontColor, "[%i] [Alt M] Measure Distance", MeasureDistance);
+		font.Draw(x, y + 15 * 28, fontColor, "[%i] [Alt C] Ally Player Info", AllyPlayers);
+		font.Draw(x, y + 15 * 29, fontColor, "[%i] [Alt V] Ally Player Info (show distance)", AllyPlayersRange);
 	}
 
 	if (DpsMeter)
@@ -109,7 +158,7 @@ void cbESP()
 			else
 				dpsThis = NULL;
 		}
-		
+
 		int dp1s = 0;
 		std::stringstream dp1S;
 		dp1S << "DPS 1s: ";
@@ -120,7 +169,9 @@ void cbESP()
 			dp1S << FormatWithCommas(dp1s);
 		}
 		else
+		{
 			dp1S << "...";
+		}
 
 		int dp5s = 0;
 		std::stringstream dp5S;
@@ -133,14 +184,33 @@ void cbESP()
 			dp5S << FormatWithCommas(dp5s);
 		}
 		else
+		{
 			dp5S << "...";
-		
-		float x = int((GetWindowWidth() / 4 * 3 - 14 * fontW / 2) *.9);
-		font.Draw(x, 8 + 15 * 0, fontColor, dp1S.str());
-		font.Draw(x, 8 + 15 * 1, fontColor, dp5S.str());
+		}
+			
+		SIZE sizeA = ssSize(dp1S.str(), 16);
+		SIZE sizeB = ssSize(dp5S.str(), 16);
+		SIZE size;
+		if (sizeA.cx >= sizeB.cx)
+			size = sizeA;			
+		else
+			size = sizeB;
+			
+		int xPad = 5; int yPad = 2;
+		int x = int(GetWindowWidth() / 4*3); int y = 15 + size.cy + yPad*2;
+		x -= 120 / 2; y -= (size.cy*2+yPad*2) / 2;
+
+		DrawRectFilled(x - xPad, y - yPad - size.cy/2 - yPad/2, size.cx + xPad * 2, size.cy*2 + yPad * 3, backColor - 0x44000000);
+		DrawRect(x - xPad, y - yPad - size.cy / 2 - yPad / 2, size.cx + xPad * 2, size.cy * 2 + yPad * 3, 0xff444444);
+		font.Draw(x, y - size.cy/2 - yPad/2, fontColor, dp1S.str());
+		font.Draw(x, y + size.cy/2 + yPad/2, fontColor, dp5S.str());
 
 		if (DpsDebug)
 		{
+			y += 45; size.cx = 150;
+			DrawRectFilled(x - xPad, y - yPad - size.cy / 2 - yPad / 2, size.cx + xPad * 2, size.cy * 47 + yPad * 2, backColor - 0x44000000);
+			DrawRect(x - xPad, y - yPad - size.cy / 2 - yPad / 2, size.cx + xPad * 2, size.cy * 47 + yPad * 2, 0xff444444);
+
 			for (int i = 0; i < 50; i++)
 			{
 				std::stringstream dps;
@@ -158,30 +228,58 @@ void cbESP()
 	if (agLocked.m_ptr)
 	{
 		Character chrLocked = agLocked.GetCharacter();
-		float x = int((GetWindowWidth() / 4 - 14 * fontW / 2) *1);
+		
+		int leftAlignX;
 
 		if (SelectedHealth | SelectedHealthPercent)
 		{
-			std::stringstream health;
+			std::stringstream ss;
 
 			if (SelectedHealth)
-				health << "Selected: " << FormatWithCommas(int(chrLocked.GetCurrentHealth())) << " / " << FormatWithCommas(int(chrLocked.GetMaxHealth()));
+				ss << "Selected: " << FormatWithCommas(int(chrLocked.GetCurrentHealth())) << " / " << FormatWithCommas(int(chrLocked.GetMaxHealth()));
 			if (SelectedHealthPercent && int(chrLocked.GetMaxHealth()) > 0)
-				health << " [" << int(chrLocked.GetCurrentHealth() / chrLocked.GetMaxHealth() * 100) << "%%]";
+				ss << " [" << int(chrLocked.GetCurrentHealth() / chrLocked.GetMaxHealth() * 100) << "%%]";
 
-			font.Draw(x, 8, fontColor, health.str());
+			SIZE size = ssSize(ss.str(), 16);
+			int xPad = 5; int yPad = 2;
+			int x = int(GetWindowWidth() / 4); int y = 15;
+			x -= size.cx / 2; y -= size.cy / 2;
+			
+			leftAlignX = x;
+			DrawRectFilled(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, backColor - 0x44000000);
+			DrawRect(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, 0xff444444);
+			font.Draw(x, y, fontColor, ss.str());
 		}
 
 		if (DistanceToSelected)
 		{
 			Vector3 pos = agLocked.GetPos();
-			std::stringstream distance;
-			distance << "Distance: " << FormatWithCommas(int(dist(mypos, pos)));
-			font.Draw(x, 8 + 15 * 1, fontColor, distance.str());
+			std::stringstream ss;
+			ss << "Distance: " << FormatWithCommas(int(dist(mypos, pos)));
+
+			SIZE size = ssSize(ss.str(), 16);
+			int xPad = 5; int yPad = 2;
+			int x = int(GetWindowWidth() / 4); int y = 15 + yPad * 2 + size.cy;
+			x -= size.cx / 2; y -= size.cy / 2;
+			
+			if (leftAlignX)
+			{
+				x = leftAlignX;
+			}
+			else{
+				y -= size.cy + yPad*2;
+			}
+
+			DrawRectFilled(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, backColor - 0x44000000);
+			DrawRect(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, 0xff444444);
+
+			font.Draw(x, y, fontColor, ss.str());
 		}
 
 		if (SelectedDebug)
 		{
+			int x = int(GetWindowWidth() / 4); int y = 15;	// center
+
 			font.Draw(x, 8 + 15 * 2, fontColor, "agPtr: %p", *(void**)agLocked.m_ptr);
 			if (chrLocked.m_ptr)
 				font.Draw(x, 8 + 15 * 3, fontColor, "chPtr: %p", *(void**)chrLocked.m_ptr);
@@ -196,11 +294,14 @@ void cbESP()
 
 	if (SelfHealthPercent)
 	{
-		std::stringstream str;
-		str << int(me.GetCurrentHealth() / me.GetMaxHealth() * 100);
-		int x = int(GetWindowWidth() / 2 - str.str().size()*fontW/2);
-		int y = int(GetWindowHeight() - 100);
-		font.Draw(x, y, fontColor, str.str());
+		std::stringstream ss;
+		ss << int(me.GetCurrentHealth() / me.GetMaxHealth() * 100);
+		
+		SIZE size = ssSize(ss.str(), 16);
+		int x = int(GetWindowWidth() / 2); int y = int(GetWindowHeight() - 92);
+		x -= size.cx / 2; y -= size.cy / 2;
+
+		font.Draw(x, y, fontColor, ss.str());
 	}
 
 	if (MeasureDistance)
@@ -208,11 +309,17 @@ void cbESP()
 		if (MeasureDistanceStart.x == 0 && MeasureDistanceStart.y == 0 && MeasureDistanceStart.z == 0)
 			MeasureDistanceStart = mypos;
 
-		std::stringstream str;
-		str << "Displacement: " << FormatWithCommas(int(dist(mypos, MeasureDistanceStart)));
-		int x = int(GetWindowWidth() / 2 - str.str().size()*fontW / 2);
-		int y = 8;
-		font.Draw(x, y, fontColor, str.str());
+		std::stringstream ss;
+		ss << "Displacement: " << FormatWithCommas(int(dist(mypos, MeasureDistanceStart)));
+		
+		int x = int(GetWindowWidth() / 2); int y = 15;
+		SIZE size = ssSize(ss.str(), 16);
+		x -= size.cx/2; y -= size.cy/2;
+		int xPad = 5; int yPad = 2;
+
+		DrawRectFilled(x - xPad, y - yPad, size.cx + xPad*2, size.cy + yPad*2, backColor - 0x44000000);
+		DrawRect(x - xPad, y - yPad, size.cx + xPad*2, size.cy + yPad*2, 0xff444444);
+		font.Draw(x, y, fontColor, ss.str());
 	}
 	else
 	{
@@ -221,12 +328,36 @@ void cbESP()
 	
 	if (AllyPlayers)
 	{
-		float x = int((GetWindowWidth() / 4 - 14 * fontW / 2) * 1);
+		float x = 320;
+		float y = 20;
+		int boxWidth = 400;
 		int i = 4;
 		Agent ag;
+		Agent agCount;
 
-		font.Draw(x, 8 + 15 * 2, fontColor, "Allies close by");
-		font.Draw(x, 8 + 15 * 3, fontColor, "---------------");
+		int count = 0;
+		while (agCount.BeNext())
+		{
+			Character chr = agCount.GetCharacter();
+			if (chr.IsControlled())
+				continue;
+
+			if (!chr.IsPlayer() || chr.GetAttitude() != GW2::ATTITUDE_FRIENDLY)
+				continue;
+
+			if (!chr.IsValid())
+				continue;
+
+			count++;
+		}
+
+		int xPad = 5; int yPad = 2;
+		DrawRectFilled(x - xPad, y - yPad + 15 * 2, boxWidth + xPad * 2, count * 15 + 15 * 2 + yPad * 3, backColor - 0x44000000);
+		      DrawRect(x - xPad, y - yPad + 15 * 2, boxWidth + xPad * 2, count * 15 + 15 * 2 + yPad * 3, 0xff444444);
+
+		font.Draw(x, y + 15 * 2, fontColor, "Allies close by");
+		font.Draw(x, y + 15 * 3, fontColor, "---------------");
+		
 		while (ag.BeNext())
 		{
 			Character chr = ag.GetCharacter();
@@ -243,28 +374,28 @@ void cbESP()
 			switch (chr.GetProfession())
 			{
 			case GW2::PROFESSION_GUARDIAN:
-				out << "[G] ";
+				out << "[Guard] ";
 				break;
 			case GW2::PROFESSION_WARRIOR:
-				out << "[W] ";
+				out << "[War] ";
 				break;
 			case GW2::PROFESSION_ENGINEER:
-				out << "[En]";
+				out << "[Engi] ";
 				break;
 			case GW2::PROFESSION_RANGER:
-				out << "[R] ";
+				out << "[Rang] ";
 				break;
 			case GW2::PROFESSION_THIEF:
-				out << "[T] ";
+				out << "[Thief] ";
 				break;
 			case GW2::PROFESSION_ELEMENTALIST:
-				out << "[El]";
+				out << "[Ele] ";
 				break;
 			case GW2::PROFESSION_MESMER:
-				out << "[M] ";
+				out << "[Mes] ";
 				break;
 			case GW2::PROFESSION_NECROMANCER:
-				out << "[N] ";
+				out << "[Necro] ";
 				break;
 			}
 			out << " " << chr.GetName() << " [" << FormatWithCommas(int(chr.GetMaxHealth())) << " hp]";
@@ -275,7 +406,7 @@ void cbESP()
 				out << " " << FormatWithCommas(int(dist(mypos, pos))) << " away";
 			}
 
-			font.Draw(x, 8 + 15 * i, fontColor, out.str());
+			font.Draw(x, y + 15 * i, fontColor, out.str());
 			i++;
 		}
 	}
@@ -301,6 +432,7 @@ void cbESP()
 				{
 					if (!chr.IsPlayer() && int(chr.GetCurrentHealth()) > 0 && int(chr.GetMaxHealth()) > 1)
 					{
+						// Enemy NPC
 						if (EnemyFloaters && (chr.GetAttitude() == GW2::ATTITUDE_HOSTILE || chr.GetAttitude() == GW2::ATTITUDE_INDIFFERENT))
 						{
 							if (FloatersType) // Health
@@ -326,6 +458,7 @@ void cbESP()
 
 						}
 
+						// Ally NPC
 						if (AllyFloaters && (chr.GetAttitude() == GW2::ATTITUDE_FRIENDLY || chr.GetAttitude() == GW2::ATTITUDE_NEUTRAL))
 						{
 							if (FloatersType) // Health
@@ -353,6 +486,7 @@ void cbESP()
 					
 					if (chr.IsPlayer() && int(chr.GetCurrentHealth()) > 0)
 					{
+						// Ally Player
 						if (AllyPlayerFloaters && chr.GetAttitude() == GW2::ATTITUDE_FRIENDLY)
 						{
 							if (FloatersType) // Health
@@ -367,6 +501,7 @@ void cbESP()
 								Vector3 pos = ag.GetPos();
 								std::stringstream distance;
 								distance << FormatWithCommas(int(dist(mypos, pos)));
+								//distance << chr.GetWvwSupply();
 								int xOffset = int(distance.str().size()*fontW / 2);
 								font.Draw(x - xOffset, y - 15, fontColor, distance.str());
 							}
@@ -377,6 +512,7 @@ void cbESP()
 							DrawCircleFilledProjected(pos, 20.0f, color - 0x30000000);
 						}
 
+						// Enemy Player
 						if (EnemyPlayerFloaters && chr.GetAttitude() == GW2::ATTITUDE_HOSTILE)
 						{
 							if (FloatersType) // Health
@@ -403,6 +539,149 @@ void cbESP()
 					}
 				}
 			}
+		}
+	}
+	if (FloaterStats)
+	{
+		int allyNpc = 0;
+		int foeNpc = 0;
+		int allyPlayer = 0;
+		int foePlayer = 0;
+
+		int tallyGuardian = 0;
+		int tallyWarrior = 0;
+		int tallyEngineer = 0;
+		int tallyRanger = 0;
+		int tallyThief = 0;
+		int tallyElementalist = 0;
+		int tallyMesmer = 0;
+		int tallyNecromancer = 0;
+
+		Agent ag;
+		while (ag.BeNext())
+		{
+			Character chr = ag.GetCharacter();
+			Vector3 pos = ag.GetPos();
+
+			if (chr.IsControlled())
+				continue;
+
+			if (dist(mypos, pos) >= FloatersRange)
+				continue;
+
+			if (ag.GetCategory() == GW2::AGENT_CATEGORY_CHAR)
+			{
+				if (!chr.IsPlayer() && int(chr.GetCurrentHealth()) > 0 && int(chr.GetMaxHealth()) > 1)
+				{
+					if (EnemyFloaters && (chr.GetAttitude() == GW2::ATTITUDE_HOSTILE || chr.GetAttitude() == GW2::ATTITUDE_INDIFFERENT))
+						foeNpc++;
+					if (AllyFloaters && (chr.GetAttitude() == GW2::ATTITUDE_FRIENDLY || chr.GetAttitude() == GW2::ATTITUDE_NEUTRAL))
+						allyNpc++;
+				}
+				if (chr.IsPlayer() && int(chr.GetCurrentHealth()) > 0)
+				{
+					if (AllyPlayerFloaters && chr.GetAttitude() == GW2::ATTITUDE_FRIENDLY)
+						allyPlayer++;
+					if (EnemyPlayerFloaters && chr.GetAttitude() == GW2::ATTITUDE_HOSTILE)
+						foePlayer++;
+
+					switch (chr.GetProfession())
+					{
+					case GW2::PROFESSION_GUARDIAN:
+						tallyGuardian++;
+						break;
+					case GW2::PROFESSION_WARRIOR:
+						tallyWarrior++;
+						break;
+					case GW2::PROFESSION_ENGINEER:
+						tallyEngineer++;
+						break;
+					case GW2::PROFESSION_RANGER:
+						tallyRanger++;
+						break;
+					case GW2::PROFESSION_THIEF:
+						tallyThief++;
+						break;
+					case GW2::PROFESSION_ELEMENTALIST:
+						tallyElementalist++;
+						break;
+					case GW2::PROFESSION_MESMER:
+						tallyMesmer++;
+						break;
+					case GW2::PROFESSION_NECROMANCER:
+						tallyNecromancer++;
+						break;
+					}
+				}
+			}
+		}
+		
+		std::stringstream ss;
+		ss << "R:" << FormatWithCommas(FloatersRange);
+		if (AllyFloaters) ss << " | AllyNpc: " << allyNpc;
+		if (EnemyFloaters) ss << " | FoeNpc: " << foeNpc;
+		if (AllyPlayerFloaters) ss << " | Allies: " << allyPlayer;
+		if (EnemyPlayerFloaters) ss << " | Foes: " << foePlayer;
+		
+		
+		SIZE size = ssSize(ss.str(), 16);
+		int x = int(GetWindowWidth() / 2); int y = 45;
+		x -= size.cx / 2; y -= size.cy / 2;
+		int xPad = 5; int yPad = 2;
+
+		DrawRectFilled(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, backColor - 0x44000000);
+		DrawRect(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, 0xff444444);
+		font.Draw(x, y, fontColor, ss.str());
+		
+		ss.str("");
+		if (FloaterClasses)
+		{
+			size = ssSize("Ranger: 00", 16);
+			x = int(GetWindowWidth() / 2); y = 45 + 30;
+			x -= size.cx / 2; y -= size.cy / 2;
+			int xPad = 5; int yPad = 2;
+
+			DrawRectFilled(x - xPad, y - yPad, size.cx + xPad * 2, size.cy * 7 + yPad * 7, backColor - 0x44000000);
+			DrawRect(x - xPad, y - yPad, size.cx + xPad * 2, size.cy * 7 + yPad * 7, 0xff444444);
+
+			ss << "Guard: " << tallyGuardian << " ";
+			font.Draw(x, y, fontColor, ss.str());
+			ss.str("");
+
+			y += 15;
+			ss << "War: " << tallyWarrior << " ";
+			font.Draw(x, y, fontColor, ss.str());
+			ss.str("");
+			
+			y += 15;
+			ss << "Ele: " << tallyElementalist << " ";
+			font.Draw(x, y, fontColor, ss.str());
+			ss.str("");
+
+			y += 15;
+			ss << "Mes: " << tallyMesmer << " ";
+			font.Draw(x, y, fontColor, ss.str());
+			ss.str("");
+
+			y += 15;
+			ss << "Thief: " << tallyThief << " ";
+			font.Draw(x, y, fontColor, ss.str());
+			ss.str("");
+
+			y += 15;
+			ss << "Necro: " << tallyNecromancer << " ";
+			font.Draw(x, y, fontColor, ss.str());
+			ss.str("");
+
+			y += 15;
+			ss << "Ranger: " << tallyRanger << " ";
+			font.Draw(x, y, fontColor, ss.str());
+			ss.str("");
+
+			y += 15;
+			ss << "Engi: " << tallyEngineer << " ";
+			font.Draw(x, y, fontColor, ss.str());
+			ss.str("");
 		}
 	}
 }
@@ -476,9 +755,11 @@ void HotKey()
 	RegisterHotKey(NULL, 20, MOD_ALT | MOD_NOREPEAT, 0x46); // Floaters
 	RegisterHotKey(NULL, 21, MOD_ALT | MOD_NOREPEAT, 0x30); // Floaters Type (Health/Distance)
 	RegisterHotKey(NULL, 22, MOD_ALT | MOD_NOREPEAT, 0x31); // Floaters Ally NPC
-	RegisterHotKey(NULL, 23, MOD_ALT | MOD_NOREPEAT, 0x32); // Floaters Ally Players
-	RegisterHotKey(NULL, 24, MOD_ALT | MOD_NOREPEAT, 0x33); // Floaters Enemy NPC
+	RegisterHotKey(NULL, 23, MOD_ALT | MOD_NOREPEAT, 0x32); // Floaters Enemy NPC
+	RegisterHotKey(NULL, 24, MOD_ALT | MOD_NOREPEAT, 0x33); // Floaters Ally Players
 	RegisterHotKey(NULL, 25, MOD_ALT | MOD_NOREPEAT, 0x34); // Flaoters Enemy Players
+	RegisterHotKey(NULL, 26, MOD_ALT | MOD_NOREPEAT, 0x39); // Floater Stats
+	RegisterHotKey(NULL, 27, MOD_ALT | MOD_NOREPEAT, 0x38); // Floater Classes
 
 	RegisterHotKey(NULL, 28, MOD_ALT, 0x6B); // Floaters Range +
 	RegisterHotKey(NULL, 29, MOD_ALT, 0x6D); // Flaoters Range -
@@ -517,11 +798,13 @@ void HotKey()
 			if (msg.wParam == 20) Floaters = !Floaters;
 			if (msg.wParam == 21) FloatersType = !FloatersType;
 			if (msg.wParam == 22) AllyFloaters = !AllyFloaters;
-			if (msg.wParam == 23) AllyPlayerFloaters = !AllyPlayerFloaters;
-			if (msg.wParam == 24) EnemyFloaters = !EnemyFloaters;
+			if (msg.wParam == 23) EnemyFloaters = !EnemyFloaters;
+			if (msg.wParam == 24) AllyPlayerFloaters = !AllyPlayerFloaters;
 			if (msg.wParam == 25) EnemyPlayerFloaters = !EnemyPlayerFloaters;
+			if (msg.wParam == 26) FloaterStats = !FloaterStats;
+			if (msg.wParam == 27) FloaterClasses = !FloaterClasses;
 			
-			if (msg.wParam == 28) if (FloatersRange < 6800) FloatersRange += 100;
+			if (msg.wParam == 28) if (FloatersRange < 15000) FloatersRange += 100;
 			if (msg.wParam == 29) if (FloatersRange > 100) FloatersRange -= 100;
 			
 
@@ -546,8 +829,8 @@ void CodeMain(){
 	NewThread(HotKey);
 	EnableEsp(cbESP);
 	
-	if (!font.Init(18, "Courier New"))
-		DbgOut("could not init Courier New font");
+	if (!font.Init(16, "Verdana"))
+		DbgOut("could not init Font");
 }
 
 GW2LIBInit(CodeMain);

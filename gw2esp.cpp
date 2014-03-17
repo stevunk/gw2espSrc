@@ -502,18 +502,20 @@ void cbESP()
 						{
 							if (FloatersType) // Health
 							{
-								std::stringstream health;
-								health << FormatWithCommas(int(chr.GetMaxHealth()));
-								int xOffset = int(health.str().size()*fontW / 2);
-								font.Draw(x - xOffset, y - 15, fontColor, health.str());
+								std::stringstream ss;
+								ss << FormatWithCommas(int(chr.GetMaxHealth()));
+								SIZE size = ssSize(ss.str(), 16);
+								int xOffset = int(size.cx / 2);
+								font.Draw(x - xOffset, y - 15, fontColor, ss.str());
 							}
 							else // Distance
 							{
 								Vector3 pos = ag.GetPos();
-								std::stringstream distance;
-								distance << FormatWithCommas(int(dist(mypos, pos)));
-								int xOffset = int(distance.str().size()*fontW / 2);
-								font.Draw(x - xOffset, y - 15, fontColor, distance.str());
+								std::stringstream ss;
+								ss << FormatWithCommas(int(dist(mypos, pos)));
+								SIZE size = ssSize(ss.str(), 16);
+								int xOffset = int(size.cx / 2);
+								font.Draw(x - xOffset, y - 15, fontColor, ss.str());
 							}
 
 							DWORD color;
@@ -528,18 +530,20 @@ void cbESP()
 						{
 							if (FloatersType) // Health
 							{
-								std::stringstream health;
-								health << FormatWithCommas(int(chr.GetMaxHealth()));
-								int xOffset = int(health.str().size()*fontW / 2);
-								font.Draw(x - xOffset, y - 15, fontColor, health.str());
+								std::stringstream ss;
+								ss << FormatWithCommas(int(chr.GetMaxHealth()));
+								SIZE size = ssSize(ss.str(), 16);
+								int xOffset = int(size.cx / 2);
+								font.Draw(x - xOffset, y - 15, fontColor, ss.str());
 							}
 							else // Distance
 							{
 								Vector3 pos = ag.GetPos();
-								std::stringstream distance;
-								distance << FormatWithCommas(int(dist(mypos, pos)));
-								int xOffset = int(distance.str().size()*fontW / 2);
-								font.Draw(x - xOffset, y - 15, fontColor, distance.str());
+								std::stringstream ss;
+								ss << FormatWithCommas(int(dist(mypos, pos)));
+								SIZE size = ssSize(ss.str(), 16);
+								int xOffset = int(size.cx / 2);
+								font.Draw(x - xOffset, y - 15, fontColor, ss.str());
 							}
 
 							DWORD color;
@@ -556,19 +560,20 @@ void cbESP()
 						{
 							if (FloatersType) // Health
 							{
-								std::stringstream health;
-								health << FormatWithCommas(int(chr.GetMaxHealth()));
-								int xOffset = int(health.str().size()*fontW / 2);
-								font.Draw(x - xOffset, y - 15, fontColor, health.str());
+								std::stringstream ss;
+								ss << FormatWithCommas(int(chr.GetMaxHealth()));
+								SIZE size = ssSize(ss.str(), 16);
+								int xOffset = int(size.cx / 2);
+								font.Draw(x - xOffset, y - 15, fontColor, ss.str());
 							}
 							else // Distance
 							{
 								Vector3 pos = ag.GetPos();
-								std::stringstream distance;
-								distance << FormatWithCommas(int(dist(mypos, pos)));
-								//distance << chr.GetWvwSupply();
-								int xOffset = int(distance.str().size()*fontW / 2);
-								font.Draw(x - xOffset, y - 15, fontColor, distance.str());
+								std::stringstream ss;
+								ss << FormatWithCommas(int(dist(mypos, pos)));
+								SIZE size = ssSize(ss.str(), 16);
+								int xOffset = int(size.cx / 2);
+								font.Draw(x - xOffset, y - 15, fontColor, ss.str());
 							}
 
 							DWORD color;
@@ -582,18 +587,20 @@ void cbESP()
 						{
 							if (FloatersType) // Health
 							{
-								std::stringstream health;
-								health << FormatWithCommas(int(chr.GetMaxHealth()));
-								int xOffset = int(health.str().size()*fontW / 2);
-								font.Draw(x - xOffset, y - 15, fontColor, health.str());
+								std::stringstream ss;
+								ss << FormatWithCommas(int(chr.GetMaxHealth()));
+								SIZE size = ssSize(ss.str(), 16);
+								int xOffset = int(size.cx / 2);
+								font.Draw(x - xOffset, y - 15, fontColor, ss.str());
 							}
 							else // Distance
 							{
 								Vector3 pos = ag.GetPos();
-								std::stringstream distance;
-								distance << FormatWithCommas(int(dist(mypos, pos)));
-								int xOffset = int(distance.str().size()*fontW / 2);
-								font.Draw(x - xOffset, y - 15, fontColor, distance.str());
+								std::stringstream ss;
+								ss << FormatWithCommas(int(dist(mypos, pos)));
+								SIZE size = ssSize(ss.str(), 16);
+								int xOffset = int(size.cx / 2);
+								font.Draw(x - xOffset, y - 15, fontColor, ss.str());
 							}
 							
 							DWORD color;

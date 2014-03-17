@@ -12,6 +12,7 @@ Compile to a DLL and inject into your running gw2.exe process
 #include "gw2lib.h" // GW2Lib library by Rafi
 
 using namespace GW2LIB;
+using namespace GW2;
 
 // ESP Elements
 bool Help = false;
@@ -21,7 +22,7 @@ bool DpsDebug = false;
 bool AllowNegativeDps = false;
 bool DpsLock = false;
 
-int  FloatersRange = 3000;
+int  FloatersRange = 7000;
 bool Floaters = false;
 bool FloaterStats = false;
 bool FloaterClasses = false;
@@ -41,7 +42,7 @@ bool SelfHealthPercent = true;
 bool KillTime = false;
 bool MeasureDistance = false;
 bool AllyPlayers = false;
-bool AllyPlayersRange = false;
+bool AllyPlayersVit = false;
 
 // Global Vars
 HWND hwnd = FindWindowEx(NULL, NULL, L"Guild Wars 2", NULL);
@@ -50,6 +51,7 @@ double fontW = 10;
 static const DWORD fontColor = 0xffffffff;
 static const DWORD backColor = 0xff000000;
 boost::circular_buffer<int> dpsBuffer(50);
+float timer[3] {0,0,0};
 int dpsThis = NULL;
 Vector3 MeasureDistanceStart = { 0, 0, 0 };
 
@@ -110,8 +112,8 @@ void cbESP()
 
 	if (Help)
 	{
-		SIZE size = ssSize("[%i] [Alt L] DPS Meter LockOnCurrentlySelected", 16);
-		float x = int(GetWindowWidth() / 2 - 45 * fontW / 2);
+		SIZE size = ssSize("[0] [Alt V] Ally Player Info (vitality over base) (80 only atm)", 16);
+		float x = int(GetWindowWidth() / 2 - size.cx / 2);
 		float y = 150;
 		int xPad = 5; int yPad = 2;
 
@@ -123,7 +125,7 @@ void cbESP()
 		font.Draw(x, y + 15 * 3, fontColor,  "[%i] [Alt D] DPS Meter", DpsMeter);
 		font.Draw(x, y + 15 * 4, fontColor,  "[%i] [Alt B] DPS Meter Debug", DpsDebug);
 		font.Draw(x, y + 15 * 5, fontColor,  "[%i] [Alt N] DPS Meter AllowNegativeDPS", AllowNegativeDps);
-		font.Draw(x, y + 15 * 6, fontColor,  "[%i] [Alt L] DPS Meter LockOnCurrentlySelected", DpsLock);
+		font.Draw(x, y + 15 * 6, fontColor,  "[%i] [Alt L] DPS Meter/Timer LockOnCurrentlySelected", DpsLock);
 
 		font.Draw(x, y + 15 * 8, fontColor,  "[%i] [Alt F] Floaters", Floaters);
 		font.Draw(x, y + 15 * 9, fontColor,  "[-] [Alt +] Floaters Range + (%i)", FloatersRange);
@@ -146,7 +148,7 @@ void cbESP()
 		font.Draw(x, y + 15 * 26, fontColor, "[%i] [Alt T] Kill Timer", KillTime);
 		font.Draw(x, y + 15 * 27, fontColor, "[%i] [Alt M] Measure Distance", MeasureDistance);
 		font.Draw(x, y + 15 * 28, fontColor, "[%i] [Alt C] Ally Player Info", AllyPlayers);
-		font.Draw(x, y + 15 * 29, fontColor, "[%i] [Alt V] Ally Player Info (show distance)", AllyPlayersRange);
+		font.Draw(x, y + 15 * 29, fontColor, "[%i] [Alt V] Ally Player Info (vitality over base) (80 only atm)", AllyPlayersVit);
 	}
 
 	if (DpsMeter)
@@ -207,7 +209,7 @@ void cbESP()
 
 		if (DpsDebug)
 		{
-			y += 45; size.cx = 150;
+			y += 45; size.cx = 170;
 			DrawRectFilled(x - xPad, y - yPad - size.cy / 2 - yPad / 2, size.cx + xPad * 2, size.cy * 47 + yPad * 2, backColor - 0x44000000);
 			DrawRect(x - xPad, y - yPad - size.cy / 2 - yPad / 2, size.cx + xPad * 2, size.cy * 47 + yPad * 2, 0xff444444);
 
@@ -222,7 +224,16 @@ void cbESP()
 
 	if (KillTime)
 	{
-		// too lazy to code atm
+		std::stringstream ss;
+		ss << "Timer: " << std::fixed << std::setprecision(1) << timer[2] << "s";
+		SIZE size = ssSize(ss.str(), 16);
+		int xPad = 5; int yPad = 2;
+		int x = int(GetWindowWidth() / 4 * 3); int y = 15+1;
+		x -= size.cx + 76; y -= size.cy / 2;
+
+		DrawRectFilled(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, backColor - 0x44000000);
+		DrawRect(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, 0xff444444);
+		font.Draw(x, y, fontColor, ss.str());
 	}
 
 	if (agLocked.m_ptr)
@@ -264,7 +275,7 @@ void cbESP()
 			
 			if (leftAlignX)
 			{
-				x = leftAlignX;
+				//x = leftAlignX;
 			}
 			else{
 				y -= size.cy + yPad*2;
@@ -288,7 +299,7 @@ void cbESP()
 			
 			font.Draw(x, 8 + 15 * 5, fontColor, "cat: %i / type: %i", agLocked.GetCategory(), agLocked.GetType());
 
-			//font.Draw(x, 8 + 15 * 6, fontColor, "dpsBuffer: %i", dpsBuffer);
+			font.Draw(x, 8 + 15 * 6, fontColor, "lvl: %i, scaled lvl: %i, supply: %f", chrLocked.GetLevel(), chrLocked.GetScaledLevel(), chrLocked.GetWvwSupply());
 		}
 	}
 
@@ -312,7 +323,7 @@ void cbESP()
 		std::stringstream ss;
 		ss << "Displacement: " << FormatWithCommas(int(dist(mypos, MeasureDistanceStart)));
 		
-		int x = int(GetWindowWidth() / 2); int y = 15;
+		int x = int(GetWindowWidth() / 2); int y = 33;
 		SIZE size = ssSize(ss.str(), 16);
 		x -= size.cx/2; y -= size.cy/2;
 		int xPad = 5; int yPad = 2;
@@ -330,7 +341,7 @@ void cbESP()
 	{
 		float x = 320;
 		float y = 20;
-		int boxWidth = 400;
+		int boxWidth = 500;
 		int i = 4;
 		Agent ag;
 		Agent agCount;
@@ -369,7 +380,8 @@ void cbESP()
 
 			if (!chr.IsValid())
 				continue;
-
+			
+			// class, name, hp
 			std::stringstream out;
 			switch (chr.GetProfession())
 			{
@@ -400,12 +412,65 @@ void cbESP()
 			}
 			out << " " << chr.GetName() << " [" << FormatWithCommas(int(chr.GetMaxHealth())) << " hp]";
 			
-			if (AllyPlayersRange)
+			// vitality over base
+			if (AllyPlayersVit)
 			{
-				Vector3 pos = ag.GetPos();
-				out << " " << FormatWithCommas(int(dist(mypos, pos))) << " away";
+				// base stats
+				int lvl = 80;
+				float hp = 0;
+				float vit = 16;
+
+				// calc base vit
+				if (lvl >=  0 && lvl <=  9) vit += (lvl -  0) *  4; if (lvl >  9) vit += 10 *  4;
+				if (lvl >= 10 && lvl <= 19) vit += (lvl -  9) *  6; if (lvl > 19) vit += 10 *  6;
+				if (lvl >= 20 && lvl <= 29) vit += (lvl - 19) *  8; if (lvl > 29) vit += 10 *  8;
+				if (lvl >= 30 && lvl <= 39) vit += (lvl - 29) * 10; if (lvl > 39) vit += 10 * 10;
+				if (lvl >= 40 && lvl <= 49) vit += (lvl - 39) * 12; if (lvl > 49) vit += 10 * 12;
+				if (lvl >= 50 && lvl <= 59) vit += (lvl - 49) * 14; if (lvl > 59) vit += 10 * 14;
+				if (lvl >= 60 && lvl <= 69) vit += (lvl - 59) * 16; if (lvl > 69) vit += 10 * 16;
+				if (lvl >= 70 && lvl <= 79) vit += (lvl - 69) * 18; if (lvl > 79) vit += 10 * 18;
+				if (lvl >= 80 && lvl <= 89) vit += (lvl - 79) * 20; if (lvl > 89) vit += 10 * 20;
+
+				// calc base hp
+				switch (chr.GetProfession())
+				{
+				case GW2::PROFESSION_WARRIOR:
+				case GW2::PROFESSION_NECROMANCER:
+					hp = lvl * 28;
+					if (lvl > 19) hp += (lvl - 19) * 42;
+					if (lvl > 39) hp += (lvl - 39) * 70;
+					if (lvl > 59) hp += (lvl - 59) * 70;
+					if (lvl > 79) hp += (lvl - 79) * 70;
+					hp += vit * 10;
+					break;
+				case GW2::PROFESSION_ENGINEER:
+				case GW2::PROFESSION_RANGER:
+				case GW2::PROFESSION_MESMER:
+					hp = lvl * 18;
+					if (lvl > 19) hp += (lvl - 19) * 27;
+					if (lvl > 39) hp += (lvl - 39) * 45;
+					if (lvl > 59) hp += (lvl - 59) * 45;
+					if (lvl > 79) hp += (lvl - 79) * 45;
+					hp += vit * 10;
+					break;
+				case GW2::PROFESSION_GUARDIAN:
+				case GW2::PROFESSION_ELEMENTALIST:
+				case GW2::PROFESSION_THIEF:
+					hp = lvl * 5;
+					if (lvl > 19) hp += (lvl - 19) * 7.5;
+					if (lvl > 39) hp += (lvl - 39) * 12.5;
+					if (lvl > 59) hp += (lvl - 59) * 12.5;
+					if (lvl > 79) hp += (lvl - 79) * 12.5;
+					hp += vit * 10;
+					break;
+				}
+				if (chr.IsAlive())
+				{
+					out << " [+" << int((chr.GetMaxHealth() - hp) / 10) << " vit, +" << int(round((916 / vit) * ((chr.GetMaxHealth() - hp) / 100))) << " trait]";
+				}
 			}
 
+			// done, print it
 			font.Draw(x, y + 15 * i, fontColor, out.str());
 			i++;
 		}
@@ -625,7 +690,7 @@ void cbESP()
 		
 		
 		SIZE size = ssSize(ss.str(), 16);
-		int x = int(GetWindowWidth() / 2); int y = 45;
+		int x = int(GetWindowWidth() / 2); int y = 9;
 		x -= size.cx / 2; y -= size.cy / 2;
 		int xPad = 5; int yPad = 2;
 
@@ -637,7 +702,7 @@ void cbESP()
 		if (FloaterClasses)
 		{
 			size = ssSize("Ranger: 00", 16);
-			x = int(GetWindowWidth() / 2); y = 45 + 30;
+			x = int(GetWindowWidth() / 2); y += 32;
 			x -= size.cx / 2; y -= size.cy / 2;
 			int xPad = 5; int yPad = 2;
 
@@ -692,6 +757,14 @@ void DpsBuffer()
 	float previousHealth = NULL;
 
 	while (true){
+		// timer not visible = reset it
+		if (!KillTime && timer[0] != 0)
+		{
+			timer[0] = 0;
+			timer[1] = 0;
+			timer[2] = 0;
+		}
+
 		if (dpsThis)
 		{
 			// new Agent, wipe buffer
@@ -700,6 +773,10 @@ void DpsBuffer()
 				for (int i = 0; i < 50; i++)
 					dpsBuffer.push_front(0);
 				dpsBuffer.clear();
+
+				timer[0] = 0;
+				timer[1] = 0;
+				timer[2] = 0;
 			}
 
 			Agent ag;
@@ -712,6 +789,22 @@ void DpsBuffer()
 				if (dpsThis == 0 || ag.GetAgentId() != dpsThis)
 					continue;
 
+				// timer
+				if (KillTime)
+				{
+					if (ch.GetCurrentHealth() == ch.GetMaxHealth() || timer[0] == 0)
+					{
+						timer[0] = std::clock();
+					}
+					
+					
+					if (ch.IsAlive()){
+						timer[1] = std::clock();
+						timer[2] = (timer[1] - timer[0]) / 1000;
+					}
+				}
+
+				// health tracker
 				if (!previousHealth)
 					previousHealth = ch.GetCurrentHealth();
 				else
@@ -773,10 +866,10 @@ void HotKey()
 	RegisterHotKey(NULL, 40, MOD_ALT | MOD_NOREPEAT, 0x50); // Self Health Percent
 
 	// Misc
-	RegisterHotKey(NULL, 50, MOD_ALT | MOD_NOREPEAT, 0x4B); // Kill Timer
+	RegisterHotKey(NULL, 50, MOD_ALT | MOD_NOREPEAT, 0x54); // Kill Timer
 	RegisterHotKey(NULL, 51, MOD_ALT | MOD_NOREPEAT, 0x4D); // Measure Distance
 	RegisterHotKey(NULL, 52, MOD_ALT | MOD_NOREPEAT, 0x43); // Ally Player list
-	RegisterHotKey(NULL, 53, MOD_ALT | MOD_NOREPEAT, 0x56); // Ally Player list distance
+	RegisterHotKey(NULL, 53, MOD_ALT | MOD_NOREPEAT, 0x56); // Ally Player list +vit
 
 	MSG msg;
 	while (GetMessage(&msg, 0, 0, 0))
@@ -820,7 +913,7 @@ void HotKey()
 			if (msg.wParam == 50) KillTime = !KillTime;
 			if (msg.wParam == 51) MeasureDistance = !MeasureDistance;
 			if (msg.wParam == 52) AllyPlayers = !AllyPlayers;
-			if (msg.wParam == 53) AllyPlayersRange = !AllyPlayersRange;
+			if (msg.wParam == 53) AllyPlayersVit = !AllyPlayersVit;
 		}
 	}
 }

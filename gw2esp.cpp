@@ -12,7 +12,6 @@ Compile to a DLL and inject into your running gw2.exe process
 #include "gw2lib.h" // GW2Lib library by Rafi
 
 using namespace GW2LIB;
-using namespace GW2;
 
 // ESP Elements
 bool Help = false;
@@ -41,19 +40,39 @@ bool SelfHealthPercent = true;
 
 bool KillTime = false;
 bool MeasureDistance = false;
+bool Speedometer = false;
 bool AllyPlayers = false;
 bool AllyPlayersVit = false;
 
 // Global Vars
 HWND hwnd = FindWindowEx(NULL, NULL, L"Guild Wars 2", NULL);
 Font font;
-double fontW = 10;
 static const DWORD fontColor = 0xffffffff;
 static const DWORD backColor = 0xff000000;
 boost::circular_buffer<int> dpsBuffer(50);
-float timer[3] {0,0,0};
+boost::circular_buffer<float> speedBuffer(50);
+float timer[3] {0, 0, 0};
 int dpsThis = NULL;
 Vector3 MeasureDistanceStart = { 0, 0, 0 };
+int mapLevel = 80;
+struct ally {
+	int level;
+	int health;
+	std::string name;
+};
+struct allies {
+	std::vector<ally> war;
+	std::vector<ally> necro;
+
+	std::vector<ally> mes;
+	std::vector<ally> ranger;
+	std::vector<ally> engi;
+
+	std::vector<ally> guard;
+	std::vector<ally> ele;
+	std::vector<ally> thief;
+};
+
 
 // Global Functions
 float dist(Vector3 p1, Vector3 p2)
@@ -95,15 +114,74 @@ SIZE ssSize(std::string ss, int height)
 	DeleteObject(hFont);
 	ReleaseDC(hwnd, hdc);
 
-	size_t count;
-	count = std::count(ss.begin(), ss.end(), ':'); size.cx -= count * 2;
-	count = std::count(ss.begin(), ss.end(), ' '); size.cx -= count * 2;
-	count = std::count(ss.begin(), ss.end(), '['); size.cx -= count * 1;
-	count = std::count(ss.begin(), ss.end(), ']'); size.cx -= count * 1;
+	size_t i;
+	i = count(ss.begin(), ss.end(), ':'); size.cx -= i * 2;
+	i = count(ss.begin(), ss.end(), ' '); size.cx -= i * 2;
+	i = count(ss.begin(), ss.end(), '['); size.cx -= i * 1;
+	i = count(ss.begin(), ss.end(), ']'); size.cx -= i * 1;
 
 	return size;
 }
+struct baseHpReturn {
+	float health;
+	float vitality;
+};
+baseHpReturn baseHp(int lvl, int profession)
+{
+	// base stats
+	float hp = 0;
+	float vit = 16;
 
+	// calc base vit
+	if (lvl >= 0 && lvl <= 9) vit += (lvl - 0) * 4; if (lvl >  9) vit += 10 * 4;
+	if (lvl >= 10 && lvl <= 19) vit += (lvl - 9) * 6; if (lvl > 19) vit += 10 * 6;
+	if (lvl >= 20 && lvl <= 29) vit += (lvl - 19) * 8; if (lvl > 29) vit += 10 * 8;
+	if (lvl >= 30 && lvl <= 39) vit += (lvl - 29) * 10; if (lvl > 39) vit += 10 * 10;
+	if (lvl >= 40 && lvl <= 49) vit += (lvl - 39) * 12; if (lvl > 49) vit += 10 * 12;
+	if (lvl >= 50 && lvl <= 59) vit += (lvl - 49) * 14; if (lvl > 59) vit += 10 * 14;
+	if (lvl >= 60 && lvl <= 69) vit += (lvl - 59) * 16; if (lvl > 69) vit += 10 * 16;
+	if (lvl >= 70 && lvl <= 79) vit += (lvl - 69) * 18; if (lvl > 79) vit += 10 * 18;
+	if (lvl >= 80 && lvl <= 89) vit += (lvl - 79) * 20; if (lvl > 89) vit += 10 * 20;
+
+	// calc base hp
+	switch (profession)
+	{
+	case GW2::PROFESSION_WARRIOR:
+	case GW2::PROFESSION_NECROMANCER:
+		hp = lvl * 28;
+		if (lvl > 19) hp += (lvl - 19) * 42;
+		if (lvl > 39) hp += (lvl - 39) * 70;
+		if (lvl > 59) hp += (lvl - 59) * 70;
+		if (lvl > 79) hp += (lvl - 79) * 70;
+		hp += vit * 10;
+		break;
+	case GW2::PROFESSION_ENGINEER:
+	case GW2::PROFESSION_RANGER:
+	case GW2::PROFESSION_MESMER:
+		hp = lvl * 18;
+		if (lvl > 19) hp += (lvl - 19) * 27;
+		if (lvl > 39) hp += (lvl - 39) * 45;
+		if (lvl > 59) hp += (lvl - 59) * 45;
+		if (lvl > 79) hp += (lvl - 79) * 45;
+		hp += vit * 10;
+		break;
+	case GW2::PROFESSION_GUARDIAN:
+	case GW2::PROFESSION_ELEMENTALIST:
+	case GW2::PROFESSION_THIEF:
+		hp = lvl * 5;
+		if (lvl > 19) hp += (lvl - 19) * 7.5;
+		if (lvl > 39) hp += (lvl - 39) * 12.5;
+		if (lvl > 59) hp += (lvl - 59) * 12.5;
+		if (lvl > 79) hp += (lvl - 79) * 12.5;
+		hp += vit * 10;
+		break;
+	}
+
+	baseHpReturn out;
+	out.health = hp;
+	out.vitality = vit;
+	return out;
+}
 void cbESP()
 {
 	Character me = GetOwnCharacter();
@@ -117,8 +195,8 @@ void cbESP()
 		float y = 150;
 		int xPad = 5; int yPad = 2;
 
-		DrawRectFilled(x - xPad, y + 15 - yPad, size.cx + xPad * 2, size.cy*27 + yPad * 4, backColor - 0x44000000);
-			  DrawRect(x - xPad, y + 15 - yPad, size.cx + xPad * 2, size.cy*27 + yPad * 4, 0xff444444);
+		DrawRectFilled(x - xPad, y + 15 - yPad, size.cx + xPad * 2, size.cy*28 + yPad * 4, backColor - 0x44000000);
+			  DrawRect(x - xPad, y + 15 - yPad, size.cx + xPad * 2, size.cy*28 + yPad * 4, 0xff444444);
 
 		font.Draw(x, y + 15 * 1, fontColor, "[%i] [Alt /] Toggle this Help screen", SelectedHealth);
 
@@ -147,8 +225,9 @@ void cbESP()
 
 		font.Draw(x, y + 15 * 26, fontColor, "[%i] [Alt T] Kill Timer", KillTime);
 		font.Draw(x, y + 15 * 27, fontColor, "[%i] [Alt M] Measure Distance", MeasureDistance);
-		font.Draw(x, y + 15 * 28, fontColor, "[%i] [Alt C] Ally Player Info", AllyPlayers);
-		font.Draw(x, y + 15 * 29, fontColor, "[%i] [Alt V] Ally Player Info (vitality over base) (80 only atm)", AllyPlayersVit);
+		font.Draw(x, y + 15 * 28, fontColor, "[%i] [Alt ,] Speedometer", Speedometer);
+		font.Draw(x, y + 15 * 29, fontColor, "[%i] [Alt C] Ally Player Info", AllyPlayers);
+		font.Draw(x, y + 15 * 30, fontColor, "[%i] [Alt V] Ally Player Info (vitality over base) (80 only atm)", AllyPlayersVit);
 	}
 
 	if (DpsMeter)
@@ -224,8 +303,16 @@ void cbESP()
 
 	if (KillTime)
 	{
+		int hr = floor(timer[2] / 60 / 60);
+		int min = floor((timer[2] - hr * 60 * 60) / 60);
+		float sec = timer[2] - hr * 60 * 60 - min * 60;
+
 		std::stringstream ss;
-		ss << "Timer: " << std::fixed << std::setprecision(1) << timer[2] << "s";
+		ss << "Timer:";
+		if (hr > 0) ss << " " << hr << "h";
+		if (min > 0) ss << " " << min << "m";
+		ss << " " << std::fixed << std::setprecision(1) << sec << "s";
+
 		SIZE size = ssSize(ss.str(), 16);
 		int xPad = 5; int yPad = 2;
 		int x = int(GetWindowWidth() / 4 * 3); int y = 15+1;
@@ -336,17 +423,45 @@ void cbESP()
 	{
 		MeasureDistanceStart = { 0, 0, 0 };
 	}
+
+	if (Speedometer)
+	{
+		float speed1 = 0;
+		for (int i = 0; i < 5; i++)
+		{
+			speed1 += speedBuffer[i];
+		}
+
+		float speed5 = 0;
+		for (int i = 0; i < 25; i++)
+		{
+			speed5 += speedBuffer[i];
+		}
+		speed5 = speed5 / 5;
+
+		std::stringstream ss;
+		ss << "Speed: " << FormatWithCommas(int(speed1)) << " in/s | " << FormatWithCommas(int(speed5)) << " in/s";
+
+		int x = int(GetWindowWidth() / 2); int y = 33;
+		int xPad = 5; int yPad = 2;
+		y += 15 + yPad * 2 + 4;
+
+		SIZE size = ssSize(ss.str(), 16);
+		x -= size.cx / 2; y -= size.cy / 2;
+
+		DrawRectFilled(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, backColor - 0x44000000);
+		DrawRect(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, 0xff444444);
+		font.Draw(x, y, fontColor, ss.str());
+	}
 	
 	if (AllyPlayers)
 	{
-		float x = 320;
-		float y = 20;
-		int boxWidth = 500;
-		int i = 4;
 		Agent ag;
 		Agent agCount;
 
-		int count = 0;
+		allies allies;
+		
+		int allyCount = 0;
 		while (agCount.BeNext())
 		{
 			Character chr = agCount.GetCharacter();
@@ -359,119 +474,215 @@ void cbESP()
 			if (!chr.IsValid())
 				continue;
 
-			count++;
-		}
-
-		int xPad = 5; int yPad = 2;
-		DrawRectFilled(x - xPad, y - yPad + 15 * 2, boxWidth + xPad * 2, count * 15 + 15 * 2 + yPad * 3, backColor - 0x44000000);
-		      DrawRect(x - xPad, y - yPad + 15 * 2, boxWidth + xPad * 2, count * 15 + 15 * 2 + yPad * 3, 0xff444444);
-
-		font.Draw(x, y + 15 * 2, fontColor, "Allies close by");
-		font.Draw(x, y + 15 * 3, fontColor, "---------------");
-		
-		while (ag.BeNext())
-		{
-			Character chr = ag.GetCharacter();
-			if (chr.IsControlled())
-				continue;
-
-			if (!chr.IsPlayer() || chr.GetAttitude() != GW2::ATTITUDE_FRIENDLY)
-				continue;
-
-			if (!chr.IsValid())
-				continue;
-			
-			// class, name, hp
-			std::stringstream out;
+			ally ally;
 			switch (chr.GetProfession())
 			{
 			case GW2::PROFESSION_GUARDIAN:
-				out << "[Guard] ";
+				ally.level = mapLevel;
+				ally.health = chr.GetMaxHealth();
+				ally.name = chr.GetName();
+				allies.guard.push_back(ally);
 				break;
 			case GW2::PROFESSION_WARRIOR:
-				out << "[War] ";
+				ally.level = mapLevel;
+				ally.health = chr.GetMaxHealth();
+				ally.name = chr.GetName();
+				allies.war.push_back(ally);
 				break;
 			case GW2::PROFESSION_ENGINEER:
-				out << "[Engi] ";
+				ally.level = mapLevel;
+				ally.health = chr.GetMaxHealth();
+				ally.name = chr.GetName();
+				allies.engi.push_back(ally);
 				break;
 			case GW2::PROFESSION_RANGER:
-				out << "[Rang] ";
+				ally.level = mapLevel;
+				ally.health = chr.GetMaxHealth();
+				ally.name = chr.GetName();
+				allies.ranger.push_back(ally);
 				break;
 			case GW2::PROFESSION_THIEF:
-				out << "[Thief] ";
+				ally.level = mapLevel;
+				ally.health = chr.GetMaxHealth();
+				ally.name = chr.GetName();
+				allies.thief.push_back(ally);
 				break;
 			case GW2::PROFESSION_ELEMENTALIST:
-				out << "[Ele] ";
+				ally.level = mapLevel;
+				ally.health = chr.GetMaxHealth();
+				ally.name = chr.GetName();
+				allies.ele.push_back(ally);
 				break;
 			case GW2::PROFESSION_MESMER:
-				out << "[Mes] ";
+				ally.level = mapLevel;
+				ally.health = chr.GetMaxHealth();
+				ally.name = chr.GetName();
+				allies.mes.push_back(ally);
 				break;
 			case GW2::PROFESSION_NECROMANCER:
-				out << "[Necro] ";
+				ally.level = mapLevel;
+				ally.health = chr.GetMaxHealth();
+				ally.name = chr.GetName();
+				allies.necro.push_back(ally);
 				break;
 			}
-			out << " " << chr.GetName() << " [" << FormatWithCommas(int(chr.GetMaxHealth())) << " hp]";
+			allyCount++;
+		}
+
+		float x = 150;
+		float y = 20;
+		int i = 5;
+		int lineHeight = 16;
+		
+		SIZE maxCharName = ssSize("WWWWWWWWWWWWWWWWWWW", 16);
+		
+		int col0 = 0;
+		int col1 = col0 + 65; // name start
+		int col2 = col1 + maxCharName.cx + 10; // hp start
+		int col3 = col2 + 85; // +vit start
+		int col4 = (AllyPlayersVit) ? col3 + 70 : col3 + 0; // +traits start
+		int colx = (AllyPlayersVit) ? col4 + 50 : col4 + 0;
+
+		int xPad = 5; int yPad = 2;
+		if (allyCount > 0)
+		{
+			DrawRectFilled(x - xPad, y - yPad + lineHeight * 2, colx + xPad * 2, allyCount * lineHeight + lineHeight * 3 + yPad * 1, backColor - 0x44000000);
+			      DrawRect(x - xPad, y - yPad + lineHeight * 2, colx + xPad * 2, allyCount * lineHeight + lineHeight * 3 + yPad * 1, 0xff444444);
+		}
+		else
+		{
+			DrawRectFilled(x - xPad, y - yPad + lineHeight * 2, colx + xPad * 2, allyCount * lineHeight + lineHeight * 4 + yPad * 1, backColor - 0x44000000);
+			      DrawRect(x - xPad, y - yPad + lineHeight * 2, colx + xPad * 2, allyCount * lineHeight + lineHeight * 4 + yPad * 1, 0xff444444);
+		}
+		
+		font.Draw(x + col0, y + lineHeight * 2, fontColor, "Allies Nearby");
+		font.Draw(x + col0, y + lineHeight * 4, fontColor, "Class");
+		font.Draw(x + col1, y + lineHeight * 4, fontColor, "Name");
+		font.Draw(x + col2, y + lineHeight * 4, fontColor, "Health");
+		if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * 4, fontColor, "Vitality");
+		if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * 4, fontColor, "Traits");
+
+		if (allyCount == 0)
+		{
+			font.Draw(x + col0, y + lineHeight * i, fontColor, "...");
+			font.Draw(x + col1, y + lineHeight * i, fontColor, "...");
+			font.Draw(x + col2, y + lineHeight * i, fontColor, "...");
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "...");
+			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "...");
+			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
+		}
+
+		// warriors
+		for (auto & ally : allies.war) {
+			baseHpReturn base = baseHp(ally.level, GW2::PROFESSION_WARRIOR);
+			std::string hp = FormatWithCommas(int(ally.health));
 			
-			// vitality over base
-			if (AllyPlayersVit)
-			{
-				// base stats
-				int lvl = 80;
-				float hp = 0;
-				float vit = 16;
+			font.Draw(x + col0, y + lineHeight * i, fontColor, "War:");
+			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
+			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
+			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
 
-				// calc base vit
-				if (lvl >=  0 && lvl <=  9) vit += (lvl -  0) *  4; if (lvl >  9) vit += 10 *  4;
-				if (lvl >= 10 && lvl <= 19) vit += (lvl -  9) *  6; if (lvl > 19) vit += 10 *  6;
-				if (lvl >= 20 && lvl <= 29) vit += (lvl - 19) *  8; if (lvl > 29) vit += 10 *  8;
-				if (lvl >= 30 && lvl <= 39) vit += (lvl - 29) * 10; if (lvl > 39) vit += 10 * 10;
-				if (lvl >= 40 && lvl <= 49) vit += (lvl - 39) * 12; if (lvl > 49) vit += 10 * 12;
-				if (lvl >= 50 && lvl <= 59) vit += (lvl - 49) * 14; if (lvl > 59) vit += 10 * 14;
-				if (lvl >= 60 && lvl <= 69) vit += (lvl - 59) * 16; if (lvl > 69) vit += 10 * 16;
-				if (lvl >= 70 && lvl <= 79) vit += (lvl - 69) * 18; if (lvl > 79) vit += 10 * 18;
-				if (lvl >= 80 && lvl <= 89) vit += (lvl - 79) * 20; if (lvl > 89) vit += 10 * 20;
+			i++;
+		}
+		// guards
+		for (auto & ally : allies.guard) {
+			baseHpReturn base = baseHp(ally.level, GW2::PROFESSION_GUARDIAN);
+			std::string hp = FormatWithCommas(int(ally.health));
 
-				// calc base hp
-				switch (chr.GetProfession())
-				{
-				case GW2::PROFESSION_WARRIOR:
-				case GW2::PROFESSION_NECROMANCER:
-					hp = lvl * 28;
-					if (lvl > 19) hp += (lvl - 19) * 42;
-					if (lvl > 39) hp += (lvl - 39) * 70;
-					if (lvl > 59) hp += (lvl - 59) * 70;
-					if (lvl > 79) hp += (lvl - 79) * 70;
-					hp += vit * 10;
-					break;
-				case GW2::PROFESSION_ENGINEER:
-				case GW2::PROFESSION_RANGER:
-				case GW2::PROFESSION_MESMER:
-					hp = lvl * 18;
-					if (lvl > 19) hp += (lvl - 19) * 27;
-					if (lvl > 39) hp += (lvl - 39) * 45;
-					if (lvl > 59) hp += (lvl - 59) * 45;
-					if (lvl > 79) hp += (lvl - 79) * 45;
-					hp += vit * 10;
-					break;
-				case GW2::PROFESSION_GUARDIAN:
-				case GW2::PROFESSION_ELEMENTALIST:
-				case GW2::PROFESSION_THIEF:
-					hp = lvl * 5;
-					if (lvl > 19) hp += (lvl - 19) * 7.5;
-					if (lvl > 39) hp += (lvl - 39) * 12.5;
-					if (lvl > 59) hp += (lvl - 59) * 12.5;
-					if (lvl > 79) hp += (lvl - 79) * 12.5;
-					hp += vit * 10;
-					break;
-				}
-				if (chr.IsAlive())
-				{
-					out << " [+" << int((chr.GetMaxHealth() - hp) / 10) << " vit, +" << int(round((916 / vit) * ((chr.GetMaxHealth() - hp) / 100))) << " trait]";
-				}
-			}
+			font.Draw(x + col0, y + lineHeight * i, fontColor, "Guard:");
+			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
+			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
+			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
 
-			// done, print it
-			font.Draw(x, y + 15 * i, fontColor, out.str());
+			i++;
+		}
+
+		// mes
+		for (auto & ally : allies.mes) {
+			baseHpReturn base = baseHp(ally.level, GW2::PROFESSION_MESMER);
+			std::string hp = FormatWithCommas(int(ally.health));
+
+			font.Draw(x + col0, y + lineHeight * i, fontColor, "Mes:");
+			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
+			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
+			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
+
+			i++;
+		}
+		// ele
+		for (auto & ally : allies.ele) {
+			baseHpReturn base = baseHp(ally.level, GW2::PROFESSION_ELEMENTALIST);
+			std::string hp = FormatWithCommas(int(ally.health));
+
+			font.Draw(x + col0, y + lineHeight * i, fontColor, "Ele:");
+			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
+			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
+			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
+
+			i++;
+		}
+		// thief
+		for (auto & ally : allies.thief) {
+			baseHpReturn base = baseHp(ally.level, GW2::PROFESSION_THIEF);
+			std::string hp = FormatWithCommas(int(ally.health));
+
+			font.Draw(x + col0, y + lineHeight * i, fontColor, "Thief:");
+			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
+			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
+			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
+
+			i++;
+		}
+		// ranger
+		for (auto & ally : allies.ranger) {
+			baseHpReturn base = baseHp(ally.level, GW2::PROFESSION_RANGER);
+			std::string hp = FormatWithCommas(int(ally.health));
+
+			font.Draw(x + col0, y + lineHeight * i, fontColor, "Ranger:");
+			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
+			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
+			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
+
+			i++;
+		}
+		// Engi
+		for (auto & ally : allies.engi) {
+			baseHpReturn base = baseHp(ally.level, GW2::PROFESSION_ENGINEER);
+			std::string hp = FormatWithCommas(int(ally.health));
+
+			font.Draw(x + col0, y + lineHeight * i, fontColor, "Engi:");
+			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
+			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
+			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
+
+			i++;
+		}
+		// Necro
+		for (auto & ally : allies.necro) {
+			baseHpReturn base = baseHp(ally.level, GW2::PROFESSION_NECROMANCER);
+			std::string hp = FormatWithCommas(int(ally.health));
+
+			font.Draw(x + col0, y + lineHeight * i, fontColor, "Necro:");
+			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
+			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
+			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
+
 			i++;
 		}
 	}
@@ -801,12 +1012,12 @@ void DpsBuffer()
 				{
 					if (ch.GetCurrentHealth() == ch.GetMaxHealth() || timer[0] == 0)
 					{
-						timer[0] = std::clock();
+						timer[0] = clock();
 					}
 					
 					
 					if (ch.IsAlive()){
-						timer[1] = std::clock();
+						timer[1] = clock();
 						timer[2] = (timer[1] - timer[0]) / 1000;
 					}
 				}
@@ -838,6 +1049,53 @@ void DpsBuffer()
 
 		Sleep(100);
 	}
+}
+
+void SpeedBuffer()
+{
+	bool initiated = false;
+	while (1)
+	{
+		if (Speedometer)
+		{
+			initiated = true;
+			float speed;
+
+			Agent me;
+			me.BeSelf();
+
+			Vector3 posOld, posNew;
+			posOld = me.GetPos();
+			
+			for (int i = 0; i < 50; i++)
+				speedBuffer[i] = 0;
+
+			while (1)
+			{
+				if (!Speedometer)
+					break;
+				
+				if (!me.IsValid())
+					break;
+
+				posNew = me.GetPos();
+				speed = dist(posOld, posNew);
+				speedBuffer.push_front(speed);
+				posOld = posNew;
+
+				Sleep(200);
+			}
+		}
+		else if (initiated)
+		{
+			for (int i = 0; i < 50; i++)
+				speedBuffer[i] = 0;
+			initiated = false;
+		}
+
+		Sleep(100);
+	}
+	
 }
 
 void HotKey()
@@ -877,6 +1135,7 @@ void HotKey()
 	RegisterHotKey(NULL, 51, MOD_ALT | MOD_NOREPEAT, 0x4D); // Measure Distance
 	RegisterHotKey(NULL, 52, MOD_ALT | MOD_NOREPEAT, 0x43); // Ally Player list
 	RegisterHotKey(NULL, 53, MOD_ALT | MOD_NOREPEAT, 0x56); // Ally Player list +vit
+	RegisterHotKey(NULL, 54, MOD_ALT | MOD_NOREPEAT, 0xBC); // Speedometer
 
 	MSG msg;
 	while (GetMessage(&msg, 0, 0, 0))
@@ -921,11 +1180,15 @@ void HotKey()
 			if (msg.wParam == 51) MeasureDistance = !MeasureDistance;
 			if (msg.wParam == 52) AllyPlayers = !AllyPlayers;
 			if (msg.wParam == 53) AllyPlayersVit = !AllyPlayersVit;
+			if (msg.wParam == 54) Speedometer = !Speedometer;
 		}
 	}
 }
-void CodeMain(){
+
+void CodeMain()
+{
 	NewThread(DpsBuffer);
+	NewThread(SpeedBuffer);
 	NewThread(HotKey);
 	EnableEsp(cbESP);
 	

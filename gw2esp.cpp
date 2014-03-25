@@ -5,7 +5,10 @@ Compile to a DLL and inject into your running gw2.exe process
 #include <locale>
 #include <iomanip>
 #include <sstream>
+#include <fstream>
 #include <numeric>
+#include <math.h>
+#include <sys/timeb.h>
 #include <assert.h>
 #include <Windows.h>
 #include <boost/circular_buffer.hpp> // Boost v1.55 library
@@ -18,6 +21,9 @@ bool Help = false;
 
 bool DpsMeter = true;
 bool DpsDebug = false;
+bool DpsToFile = false;
+bool DpsToFile100ms = false;
+bool DpsToFileIgnoreZero = false;
 bool AllowNegativeDps = false;
 bool DpsLock = false;
 
@@ -39,6 +45,8 @@ bool SelectedDebug = false;
 bool SelfHealthPercent = true;
 
 bool KillTime = false;
+bool AttackRate = false;
+float AttackRateMin = 0.5;
 bool MeasureDistance = false;
 bool Speedometer = false;
 bool AllyPlayers = false;
@@ -51,6 +59,7 @@ static const DWORD fontColor = 0xffffffff;
 static const DWORD backColor = 0xff000000;
 boost::circular_buffer<int> dpsBuffer(50);
 boost::circular_buffer<float> speedBuffer(50);
+boost::circular_buffer<float> attackrateBuffer(50);
 float timer[3] {0, 0, 0};
 int dpsThis = NULL;
 Vector3 MeasureDistanceStart = { 0, 0, 0 };
@@ -72,7 +81,6 @@ struct allies {
 	std::vector<ally> ele;
 	std::vector<ally> thief;
 };
-
 
 // Global Functions
 float dist(Vector3 p1, Vector3 p2)
@@ -182,6 +190,19 @@ baseHpReturn baseHp(int lvl, int profession)
 	out.vitality = vit;
 	return out;
 }
+int getMilliCount(){
+	timeb tb;
+	ftime(&tb);
+	int nCount = tb.millitm + (tb.time & 0xfffff) * 1000;
+	return nCount;
+}
+int getMilliSpan(int nTimeStart){
+	int nSpan = getMilliCount() - nTimeStart;
+	if (nSpan < 0)
+		nSpan += 0x100000 * 1000;
+	return nSpan;
+}
+
 void cbESP()
 {
 	Character me = GetOwnCharacter();
@@ -195,39 +216,43 @@ void cbESP()
 		float y = 150;
 		int xPad = 5; int yPad = 2;
 
-		DrawRectFilled(x - xPad, y + 15 - yPad, size.cx + xPad * 2, size.cy*28 + yPad * 4, backColor - 0x44000000);
-			  DrawRect(x - xPad, y + 15 - yPad, size.cx + xPad * 2, size.cy*28 + yPad * 4, 0xff444444);
+		DrawRectFilled(x - xPad, y + 15 - yPad, size.cx + xPad * 2, size.cy*32 + yPad * 4, backColor - 0x44000000);
+			  DrawRect(x - xPad, y + 15 - yPad, size.cx + xPad * 2, size.cy*32 + yPad * 4, 0xff444444);
 
-		font.Draw(x, y + 15 * 1, fontColor, "[%i] [Alt /] Toggle this Help screen", SelectedHealth);
+		font.Draw(x, y + 15 * 1, fontColor,  "[%i] [Alt /] Toggle this Help screen", SelectedHealth);
 
 		font.Draw(x, y + 15 * 3, fontColor,  "[%i] [Alt D] DPS Meter", DpsMeter);
 		font.Draw(x, y + 15 * 4, fontColor,  "[%i] [Alt B] DPS Meter Debug", DpsDebug);
 		font.Draw(x, y + 15 * 5, fontColor,  "[%i] [Alt N] DPS Meter AllowNegativeDPS", AllowNegativeDps);
 		font.Draw(x, y + 15 * 6, fontColor,  "[%i] [Alt L] DPS Meter/Timer LockOnCurrentlySelected", DpsLock);
+		font.Draw(x, y + 15 * 7, fontColor,  "[%i] [Alt W] Log DPS To File (GW2's folder)", DpsToFile);
+		font.Draw(x, y + 15 * 8, fontColor,  "[%i] [Alt E] Log DPS To File (ignore 0 dps)", DpsToFileIgnoreZero);
+		font.Draw(x, y + 15 * 9, fontColor,  "[%i] [Alt Q] Log DPS Faster (dmg per 100ms)", DpsToFile100ms);
 
-		font.Draw(x, y + 15 * 8, fontColor,  "[%i] [Alt F] Floaters", Floaters);
-		font.Draw(x, y + 15 * 9, fontColor,  "[-] [Alt +] Floaters Range + (%i)", FloatersRange);
-		font.Draw(x, y + 15 * 10, fontColor, "[-] [Alt -] Floaters Range - (%i)", FloatersRange);
-		font.Draw(x, y + 15 * 11, fontColor, "[%i] [Alt 9] Floater Count", FloaterStats);
-		font.Draw(x, y + 15 * 12, fontColor, "[%i] [Alt 8] Floater Classes (ally players)", FloaterClasses);
-		font.Draw(x, y + 15 * 13, fontColor, "[%i] [Alt 0] Floaters Type (Distance or Health)", FloatersType);
+		font.Draw(x, y + 15 * 11, fontColor, "[%i] [Alt F] Floaters", Floaters);
+		font.Draw(x, y + 15 * 12, fontColor, "[-] [Alt +] Floaters Range + (%i)", FloatersRange);
+		font.Draw(x, y + 15 * 13, fontColor, "[-] [Alt -] Floaters Range - (%i)", FloatersRange);
+		font.Draw(x, y + 15 * 14, fontColor, "[%i] [Alt 9] Floater Count", FloaterStats);
+		font.Draw(x, y + 15 * 15, fontColor, "[%i] [Alt 8] Floater Classes (ally players)", FloaterClasses);
+		font.Draw(x, y + 15 * 16, fontColor, "[%i] [Alt 0] Floaters Type (Distance or Health)", FloatersType);
 
-		font.Draw(x, y + 15 * 15, fontColor, "[%i] [Alt 1] Floaters on Ally NPC", AllyFloaters);
-		font.Draw(x, y + 15 * 16, fontColor, "[%i] [Alt 2] Floaters on Enemy NPC", EnemyFloaters);
-		font.Draw(x, y + 15 * 17, fontColor, "[%i] [Alt 3] Floaters on Ally Players", AllyPlayerFloaters);
-		font.Draw(x, y + 15 * 18, fontColor, "[%i] [Alt 4] Floaters on Enemy Players", EnemyPlayerFloaters);
+		font.Draw(x, y + 15 * 18, fontColor, "[%i] [Alt 1] Floaters on Ally NPC", AllyFloaters);
+		font.Draw(x, y + 15 * 19, fontColor, "[%i] [Alt 2] Floaters on Enemy NPC", EnemyFloaters);
+		font.Draw(x, y + 15 * 20, fontColor, "[%i] [Alt 3] Floaters on Ally Players", AllyPlayerFloaters);
+		font.Draw(x, y + 15 * 21, fontColor, "[%i] [Alt 4] Floaters on Enemy Players", EnemyPlayerFloaters);
 
-		font.Draw(x, y + 15 * 20, fontColor, "[%i] [Alt S] Selected Health/Percent", SelectedHealth);
-		font.Draw(x, y + 15 * 21, fontColor, "[%i] [Alt R] Selected Range", DistanceToSelected);
-		font.Draw(x, y + 15 * 22, fontColor, "[%i] [Alt I] Selected Debug", SelectedDebug);
+		font.Draw(x, y + 15 * 23, fontColor, "[%i] [Alt S] Selected Health/Percent", SelectedHealth);
+		font.Draw(x, y + 15 * 24, fontColor, "[%i] [Alt R] Selected Range", DistanceToSelected);
+		font.Draw(x, y + 15 * 25, fontColor, "[%i] [Alt I] Selected Debug", SelectedDebug);
 
-		font.Draw(x, y + 15 * 24, fontColor, "[%i] [Alt P] Self Health Percent", SelfHealthPercent);
+		font.Draw(x, y + 15 * 27, fontColor, "[%i] [Alt P] Self Health Percent", SelfHealthPercent);
 
-		font.Draw(x, y + 15 * 26, fontColor, "[%i] [Alt T] Kill Timer", KillTime);
-		font.Draw(x, y + 15 * 27, fontColor, "[%i] [Alt M] Measure Distance", MeasureDistance);
-		font.Draw(x, y + 15 * 28, fontColor, "[%i] [Alt ,] Speedometer", Speedometer);
-		font.Draw(x, y + 15 * 29, fontColor, "[%i] [Alt C] Ally Player Info", AllyPlayers);
-		font.Draw(x, y + 15 * 30, fontColor, "[%i] [Alt V] Ally Player Info (vitality over base) (80 only atm)", AllyPlayersVit);
+		font.Draw(x, y + 15 * 29, fontColor, "[%i] [Alt T] Kill Timer", KillTime);
+		font.Draw(x, y + 15 * 30, fontColor, "[%i] [Alt A] AttackRate Timer (Alt \"[\" & \"]\" to mod threshold)", AttackRate, AttackRateMin);
+		font.Draw(x, y + 15 * 31, fontColor, "[%i] [Alt M] Measure Distance", MeasureDistance);
+		font.Draw(x, y + 15 * 32, fontColor, "[%i] [Alt ,] Speedometer", Speedometer);
+		font.Draw(x, y + 15 * 33, fontColor, "[%i] [Alt C] Ally Player Info", AllyPlayers);
+		font.Draw(x, y + 15 * 34, fontColor, "[%i] [Alt V] Ally Player Info (vitality over base) (80 only atm)", AllyPlayersVit);
 	}
 
 	if (DpsMeter)
@@ -268,28 +293,34 @@ void cbESP()
 		{
 			dp5S << "...";
 		}
-			
+
 		SIZE sizeA = ssSize(dp1S.str(), 16);
 		SIZE sizeB = ssSize(dp5S.str(), 16);
 		SIZE size;
 		if (sizeA.cx >= sizeB.cx)
-			size = sizeA;			
+			size = sizeA;
 		else
 			size = sizeB;
-			
-		int xPad = 5; int yPad = 2;
-		int x = int(GetWindowWidth() / 4*3); int y = 15 + size.cy + yPad*2;
-		x -= 120 / 2; y -= (size.cy*2+yPad*2) / 2;
 
-		DrawRectFilled(x - xPad, y - yPad - size.cy/2 - yPad/2, size.cx + xPad * 2, size.cy*2 + yPad * 3, backColor - 0x44000000);
-		DrawRect(x - xPad, y - yPad - size.cy / 2 - yPad / 2, size.cx + xPad * 2, size.cy * 2 + yPad * 3, 0xff444444);
+		int xPad = 5; int yPad = 2;
+		int x = int(GetWindowWidth() / 4 * 3); int y = 15 + size.cy + yPad * 2;
+		x -= 120 / 2; y -= (size.cy * 2 + yPad * 2) / 2;
+
+		DWORD backColorSpecial = 0xff000000;
+		if (DpsToFile && dpsThis)
+		{
+			backColorSpecial = 0xff550000;
+		}
+
+		DrawRectFilled(x - xPad, y - yPad - size.cy / 2 - yPad / 2, size.cx + xPad * 2, size.cy * 2 + yPad * 3, backColorSpecial - 0x44000000);
+		      DrawRect(x - xPad, y - yPad - size.cy / 2 - yPad / 2, size.cx + xPad * 2, size.cy * 2 + yPad * 3, 0xff444444);
 		font.Draw(x, y - size.cy/2 - yPad/2, fontColor, dp1S.str());
 		font.Draw(x, y + size.cy/2 + yPad/2, fontColor, dp5S.str());
 
 		if (DpsDebug)
 		{
 			y += 45; size.cx = 170;
-			DrawRectFilled(x - xPad, y - yPad - size.cy / 2 - yPad / 2, size.cx + xPad * 2, size.cy * 47 + yPad * 2, backColor - 0x44000000);
+			DrawRectFilled(x - xPad, y - yPad - size.cy / 2 - yPad / 2, size.cx + xPad * 2, size.cy * 47 + yPad * 2, backColorSpecial - 0x44000000);
 			DrawRect(x - xPad, y - yPad - size.cy / 2 - yPad / 2, size.cx + xPad * 2, size.cy * 47 + yPad * 2, 0xff444444);
 
 			for (int i = 0; i < 50; i++)
@@ -299,6 +330,65 @@ void cbESP()
 				font.Draw(x, 8 + 15 * (float(i) + 3), fontColor, dps.str());
 			}
 		}
+	}
+
+	if (AttackRate && DpsMeter)
+	{
+		SIZE size = ssSize("Hit #50: 12.123s", 16);
+
+		int xPad = 5; int yPad = 2;
+		int x = int(GetWindowWidth() - size.cy + 6); int y = 15 + size.cy + yPad * 2;
+		x -= 120 / 2; y -= (size.cy * 2 + yPad * 2) / 2;
+
+		x -= 70;
+		DrawRectFilled(x - xPad, y - yPad - size.cy / 2 - yPad / 2, size.cx + xPad * 2, size.cy * 53 + yPad * -1, backColor - 0x44000000);
+		DrawRect(x - xPad, y - yPad - size.cy / 2 - yPad / 2, size.cx + xPad * 2, size.cy * 53 + yPad * -1, 0xff444444);
+
+		float tickAverage = 0;
+		float tickMin = 0;
+		float tickMax = 0;
+		int tickCount = 0;
+		for (int i = 0; i < 50; i++)
+		{
+			if (attackrateBuffer[i] > 0)
+				font.Draw(x, 8 + 15 * float(i), fontColor, "Hit #%02i: %0.3fs", i+1, attackrateBuffer[i]);
+			else
+				font.Draw(x, 8 + 15 * float(i), fontColor, "Hit #%02i: ...", i+1);
+
+			if (attackrateBuffer[i] > 0)
+			{
+				tickAverage += attackrateBuffer[i];
+				tickCount++;
+
+				if (tickMin == 0)
+					tickMin = attackrateBuffer[i];
+				if (tickMax == 0)
+					tickMax = attackrateBuffer[i];
+
+				if (attackrateBuffer[i] < tickMin)
+					tickMin = attackrateBuffer[i];
+				if (attackrateBuffer[i] > tickMax)
+					tickMax = attackrateBuffer[i];
+			}
+		}
+		if (tickCount > 0)
+			tickAverage = tickAverage / tickCount;
+
+		int colPad = 40;
+
+		font.Draw(x, 8 + 15 * float(51), fontColor, "Min:");
+		font.Draw(x + colPad, 8 + 15 * float(51), fontColor, "%0.3fs", tickMin);
+
+		font.Draw(x, 8 + 15 * float(52), fontColor, "Avg:");
+		if (tickAverage > 0)
+			font.Draw(x + colPad, 8 + 15 * float(52), fontColor, "%0.3fs", tickAverage);
+		else
+			font.Draw(x + colPad, 8 + 15 * float(52), fontColor, "0.000s");
+
+		font.Draw(x, 8 + 15 * float(53), fontColor, "Max:");
+		font.Draw(x + colPad, 8 + 15 * float(53), fontColor, "%0.3fs", tickMax);
+
+		font.Draw(x, 8 + 15 * float(55), fontColor, "Threshold: %0.1fs", AttackRateMin);
 	}
 
 	if (KillTime)
@@ -1051,6 +1141,70 @@ void DpsBuffer()
 	}
 }
 
+void LogDps()
+{
+	using namespace std;
+
+	bool initiated = false;
+	bool fileEmpty = true;
+	ofstream file;
+	string filename = "gw2dpsLog.txt";
+
+	while (1)
+	{
+		if (!DpsToFile && initiated)
+		{
+			initiated = false;
+		}
+		
+		if (DpsToFile && DpsMeter && dpsThis)
+		{
+			if (!initiated)
+			{
+				file.open(filename);
+				file.close();
+				initiated = true;
+				fileEmpty = true;
+			}
+
+			int dps = 0;
+			if (DpsToFile100ms)
+				dps = dpsBuffer[0];
+			else
+			{
+				for (int i = 0; i < 10; i++)
+					dps += dpsBuffer[i];
+			}
+
+			file.open(filename, ios::app);
+			if (file.is_open())
+			{
+				if (!(DpsToFileIgnoreZero && dps == 0))
+				{
+					if (fileEmpty)
+					{
+						file << dps; fileEmpty = false;
+					}
+					else
+					{
+						file << endl << dps;
+					}
+				}
+
+				if (file.bad())
+					DbgOut("Failed writing gw2dpsLog.txt");
+			}
+			else DbgOut("Failed opening gw2dpsLog.txt");
+			file.close();
+
+			if (!DpsToFile100ms)
+				Sleep(900);
+		}
+		
+		Sleep(100);
+	}
+}
+
 void SpeedBuffer()
 {
 	bool initiated = false;
@@ -1098,6 +1252,93 @@ void SpeedBuffer()
 	
 }
 
+void AttackrateBuffer() {
+	int dpsCurrent = NULL;
+	float previousHealth = NULL;
+	int lastTick = 0;
+	float tick = 0;
+
+	while (true){
+		if (AttackRate && dpsThis)
+		{
+			if (!dpsThis || dpsThis == 0)
+				continue;
+
+			// new Agent, wipe buffer
+			if (dpsCurrent != dpsThis){
+				previousHealth = NULL;
+				for (int i = 0; i < 50; i++)
+					attackrateBuffer.push_front(0);
+				attackrateBuffer.clear();
+			}
+
+			Agent ag;
+			while (ag.BeNext())
+			{
+				if (!ag.IsValid())
+					continue;
+
+				if (ag.GetAgentId() != dpsThis)
+					continue;
+
+				Character ch = ag.GetCharacter();
+				if (!ch.IsValid())
+					continue;
+
+				// health tracker
+				float cHealth = ch.GetCurrentHealth();
+				float mHealth = ch.GetMaxHealth();
+				int tickNow = getMilliCount();
+
+				Agent verify = ch.GetAgent();
+				if (ag.GetAgentId() != verify.GetAgentId())
+					continue;
+
+				if (!previousHealth)
+				{
+					previousHealth = cHealth;
+				}
+				else
+				{
+					if (cHealth < 0 || cHealth > mHealth)
+						continue;
+
+					if (previousHealth > cHealth)
+					{
+						if (!lastTick)
+						{
+							lastTick = tickNow;
+						}
+						else if (getMilliSpan(lastTick) > (AttackRateMin * 1000))
+						{
+							tick = getMilliSpan(lastTick);
+							tick = tick / 1000;
+							attackrateBuffer.push_front(tick);
+							//attackrateBuffer.push_front(mHealth);
+
+							lastTick = tickNow;
+						}
+					}
+					
+					previousHealth = cHealth;
+				}
+
+				break;
+			}
+			dpsCurrent = dpsThis;
+		}
+		else
+		{
+			previousHealth = NULL;
+			lastTick = 0;
+			for (int i = 0; i < 50; i++)
+				attackrateBuffer.push_front(0);
+			attackrateBuffer.clear();
+		}
+		Sleep(1);
+	}
+}
+
 void HotKey()
 {
 	// Help
@@ -1108,6 +1349,9 @@ void HotKey()
 	RegisterHotKey(NULL, 11, MOD_ALT | MOD_NOREPEAT, 0x42); // DPS Meter Debug
 	RegisterHotKey(NULL, 12, MOD_ALT | MOD_NOREPEAT, 0x4E); // DPS Meter Allow Negative DPS
 	RegisterHotKey(NULL, 13, MOD_ALT | MOD_NOREPEAT, 0x4C); // DPS Meter LockToCurrentlySelected
+	RegisterHotKey(NULL, 14, MOD_ALT | MOD_NOREPEAT, 0x57); // Log DPS to file
+	RegisterHotKey(NULL, 15, MOD_ALT | MOD_NOREPEAT, 0x51); // Log DPS to file every 100ms
+	RegisterHotKey(NULL, 16, MOD_ALT | MOD_NOREPEAT, 0x45); // Log DPS to file Ignore zero dmg
 
 	// Floaters
 	RegisterHotKey(NULL, 20, MOD_ALT | MOD_NOREPEAT, 0x46); // Floaters
@@ -1136,6 +1380,9 @@ void HotKey()
 	RegisterHotKey(NULL, 52, MOD_ALT | MOD_NOREPEAT, 0x43); // Ally Player list
 	RegisterHotKey(NULL, 53, MOD_ALT | MOD_NOREPEAT, 0x56); // Ally Player list +vit
 	RegisterHotKey(NULL, 54, MOD_ALT | MOD_NOREPEAT, 0xBC); // Speedometer
+	RegisterHotKey(NULL, 55, MOD_ALT | MOD_NOREPEAT, 0x41); // AttackRate
+	RegisterHotKey(NULL, 56, MOD_ALT, 0xDB); // AttackRate -
+	RegisterHotKey(NULL, 57, MOD_ALT, 0xDD); // AttackRate +
 
 	MSG msg;
 	while (GetMessage(&msg, 0, 0, 0))
@@ -1152,6 +1399,9 @@ void HotKey()
 			if (msg.wParam == 11) DpsDebug = !DpsDebug;
 			if (msg.wParam == 12) AllowNegativeDps = !AllowNegativeDps;
 			if (msg.wParam == 13) DpsLock = !DpsLock;
+			if (msg.wParam == 14) DpsToFile = !DpsToFile;
+			if (msg.wParam == 15) DpsToFile100ms = !DpsToFile100ms;
+			if (msg.wParam == 16) DpsToFileIgnoreZero = !DpsToFileIgnoreZero;
 
 			// Floaters
 			if (msg.wParam == 20) Floaters = !Floaters;
@@ -1181,6 +1431,9 @@ void HotKey()
 			if (msg.wParam == 52) AllyPlayers = !AllyPlayers;
 			if (msg.wParam == 53) AllyPlayersVit = !AllyPlayersVit;
 			if (msg.wParam == 54) Speedometer = !Speedometer;
+			if (msg.wParam == 55) AttackRate = !AttackRate;
+			if (msg.wParam == 56) if (AttackRateMin > 00.1) AttackRateMin -= 0.1;
+			if (msg.wParam == 57) if (AttackRateMin < 20.1) AttackRateMin += 0.1;
 		}
 	}
 }
@@ -1188,7 +1441,9 @@ void HotKey()
 void CodeMain()
 {
 	NewThread(DpsBuffer);
+	NewThread(LogDps);
 	NewThread(SpeedBuffer);
+	NewThread(AttackrateBuffer);
 	NewThread(HotKey);
 	EnableEsp(cbESP);
 	

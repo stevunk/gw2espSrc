@@ -421,35 +421,47 @@ void cbESP()
 
 		if (SelectedHealth | SelectedHealthPercent)
 		{
-			float cHealth, mHealth;
-			if (agLocked.GetCategory() == GW2::AGENT_CATEGORY_KEYFRAMED) {
-				unsigned long shift;
-				shift = *(unsigned long*)(*(unsigned long*)agLocked.m_ptr + 0x30);
-				shift = *(unsigned long*)(shift + 0x164);
-				cHealth = *(float*)(shift + 0x8);
-				mHealth = *(float*)(shift + 0xC);
-			}
-			else
+			if (agLocked.IsValid())
 			{
-				cHealth = chrLocked.GetCurrentHealth();
-				mHealth = chrLocked.GetMaxHealth();
-			}
-			
-			std::stringstream ss;
-			if (SelectedHealth)
-				ss << "Selected: " << FormatWithCommas(int(cHealth)) << " / " << FormatWithCommas(int(mHealth));
-			if (SelectedHealthPercent && int(mHealth) > 0)
-				ss << " [" << int(cHealth / mHealth * 100) << "%%]";
+				float cHealth, mHealth;
+				if (agLocked.GetType() == GW2::AGENT_TYPE_GADGET) {
+					unsigned long shift;
+					shift = *(unsigned long*)(*(unsigned long*)agLocked.m_ptr + 0x30);
+					shift = *(unsigned long*)(shift + 0x164);
+					
+					if (shift)
+					{
+						cHealth = *(float*)(shift + 0x8);
+						mHealth = *(float*)(shift + 0xC);
+					}
+					else
+					{
+						cHealth = 0; mHealth = 0;
+					}
+				}
+				else if (agLocked.GetType() == GW2::AGENT_CATEGORY_CHAR)
+				{
+					cHealth = chrLocked.GetCurrentHealth();
+					mHealth = chrLocked.GetMaxHealth();
+				}
 
-			SIZE size = ssSize(ss.str(), 16);
-			int xPad = 5; int yPad = 2;
-			int x = int(GetWindowWidth() / 4); int y = 15;
-			x -= size.cx / 2; y -= size.cy / 2;
-			
-			leftAlignX = x;
-			DrawRectFilled(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, backColor - 0x44000000);
-			DrawRect(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, 0xff444444);
-			font.Draw(x, y, fontColor, ss.str());
+				
+				std::stringstream ss;
+				if (SelectedHealth)
+					ss << "Selected: " << FormatWithCommas(int(cHealth)) << " / " << FormatWithCommas(int(mHealth));
+				if (SelectedHealthPercent && int(mHealth) > 0)
+					ss << " [" << int(cHealth / mHealth * 100) << "%%]";
+
+				SIZE size = ssSize(ss.str(), 16);
+				int xPad = 5; int yPad = 2;
+				int x = int(GetWindowWidth() / 4); int y = 15;
+				x -= size.cx / 2; y -= size.cy / 2;
+
+				leftAlignX = x;
+				DrawRectFilled(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, backColor - 0x44000000);
+				DrawRect(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, 0xff444444);
+				font.Draw(x, y, fontColor, ss.str());
+			}
 		}
 
 		if (DistanceToSelected)

@@ -421,12 +421,25 @@ void cbESP()
 
 		if (SelectedHealth | SelectedHealthPercent)
 		{
+			float cHealth, mHealth;
+			if (agLocked.GetCategory() == GW2::AGENT_CATEGORY_KEYFRAMED) {
+				unsigned long shift;
+				shift = *(unsigned long*)(*(unsigned long*)agLocked.m_ptr + 0x30);
+				shift = *(unsigned long*)(shift + 0x164);
+				cHealth = *(float*)(shift + 0x8);
+				mHealth = *(float*)(shift + 0xC);
+			}
+			else
+			{
+				cHealth = chrLocked.GetCurrentHealth();
+				mHealth = chrLocked.GetMaxHealth();
+			}
+			
 			std::stringstream ss;
-
 			if (SelectedHealth)
-				ss << "Selected: " << FormatWithCommas(int(chrLocked.GetCurrentHealth())) << " / " << FormatWithCommas(int(chrLocked.GetMaxHealth()));
-			if (SelectedHealthPercent && int(chrLocked.GetMaxHealth()) > 0)
-				ss << " [" << int(chrLocked.GetCurrentHealth() / chrLocked.GetMaxHealth() * 100) << "%%]";
+				ss << "Selected: " << FormatWithCommas(int(cHealth)) << " / " << FormatWithCommas(int(mHealth));
+			if (SelectedHealthPercent && int(mHealth) > 0)
+				ss << " [" << int(cHealth / mHealth * 100) << "%%]";
 
 			SIZE size = ssSize(ss.str(), 16);
 			int xPad = 5; int yPad = 2;
@@ -475,8 +488,6 @@ void cbESP()
 			font.Draw(x, 8 + 15 * 4, fontColor, "agentId: %i / 0x%04X", agLocked.GetAgentId(), agLocked.GetAgentId());
 			
 			font.Draw(x, 8 + 15 * 5, fontColor, "cat: %i / type: %i", agLocked.GetCategory(), agLocked.GetType());
-
-			font.Draw(x, 8 + 15 * 6, fontColor, "lvl: %i, scaled lvl: %i, supply: %f", chrLocked.GetLevel(), chrLocked.GetScaledLevel(), chrLocked.GetWvwSupply());
 		}
 	}
 

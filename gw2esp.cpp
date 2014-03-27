@@ -64,6 +64,7 @@ float timer[3] {0, 0, 0};
 int dpsThis = NULL;
 Vector3 MeasureDistanceStart = { 0, 0, 0 };
 int mapLevel = 80;
+int wvwBonus = 0;
 struct ally {
 	int level;
 	int health;
@@ -209,9 +210,48 @@ void cbESP()
 	Vector3 mypos = me.GetAgent().GetPos();
 	Agent agLocked = GetLockedSelection();
 
+	// WORLD BOSS DEBUGGING
+	if (false)
+	{
+		Agent all;
+		int allCount = 0;
+		while (all.BeNext())
+		{
+			if (all.GetType() == GW2::AGENT_TYPE_GADGET_ATTACK_TARGET)
+			{
+				//font.Draw(10, 30 + allCount * 15, fontColor, "agPtr: %p -> %p", (void**)all.m_ptr, *(void**)all.m_ptr);
+
+				Vector3 pos = all.GetPos();
+				float x, y;
+				if (WorldToScreen(pos, &x, &y))
+				{
+					unsigned long shift = *(unsigned long*)all.m_ptr;
+					shift = *(unsigned long*)(shift + 0x30);
+					shift = *(unsigned long*)(shift + 0x28);
+					shift = *(unsigned long*)(shift + 0x178);
+
+
+					float cHealth = *(float*)(shift + 0x8);
+					float mHealth = *(float*)(shift + 0xC);
+
+					font.Draw(x - 40, y - 15, fontColor, "%i", int(mHealth));
+
+					DWORD color;
+					color = 0x44ff3300;
+					DrawCircleProjected(pos, 20.0f, color);
+					DrawCircleFilledProjected(pos, 20.0f, color - 0x30000000);
+				}
+
+				allCount++;
+			}
+		}
+		font.Draw(10, 15, fontColor, "allCount: %i", allCount);
+	}
+	
+
 	if (Help)
 	{
-		SIZE size = ssSize("[0] [Alt V] Ally Player Info (vitality over base) (80 only atm)", 16);
+		SIZE size = ssSize("[0] [Alt V] Ally Player Vitality (lvl: Alt Home/End, wvwBonus: Alt PgUp/PgDown)", 16);
 		float x = int(GetWindowWidth() / 2 - size.cx / 2);
 		float y = 150;
 		int xPad = 5; int yPad = 2;
@@ -252,7 +292,7 @@ void cbESP()
 		font.Draw(x, y + 15 * 31, fontColor, "[%i] [Alt M] Measure Distance", MeasureDistance);
 		font.Draw(x, y + 15 * 32, fontColor, "[%i] [Alt ,] Speedometer", Speedometer);
 		font.Draw(x, y + 15 * 33, fontColor, "[%i] [Alt C] Ally Player Info", AllyPlayers);
-		font.Draw(x, y + 15 * 34, fontColor, "[%i] [Alt V] Ally Player Info (vitality over base) (80 only atm)", AllyPlayersVit);
+		font.Draw(x, y + 15 * 34, fontColor, "[%i] [Alt V] Ally Player Vitality (lvl: Alt Home/End, wvwBonus: Alt PgUp/PgDown)", AllyPlayersVit, mapLevel);
 	}
 
 	if (DpsMeter)
@@ -425,10 +465,27 @@ void cbESP()
 			{
 				float cHealth, mHealth;
 				if (agLocked.GetType() == GW2::AGENT_TYPE_GADGET) {
-					unsigned long shift;
-					shift = *(unsigned long*)(*(unsigned long*)agLocked.m_ptr + 0x30);
+					unsigned long shift = *(unsigned long*)agLocked.m_ptr;
+					shift = *(unsigned long*)(shift + 0x30);
 					shift = *(unsigned long*)(shift + 0x164);
 					
+					if (shift)
+					{
+						cHealth = *(float*)(shift + 0x8);
+						mHealth = *(float*)(shift + 0xC);
+					}
+					else
+					{
+						cHealth = 0; mHealth = 0;
+					}
+				}
+				else if (agLocked.GetType() == GW2::AGENT_TYPE_GADGET_ATTACK_TARGET)
+				{
+					unsigned long shift = *(unsigned long*)agLocked.m_ptr;
+					shift = *(unsigned long*)(shift + 0x30);
+					shift = *(unsigned long*)(shift + 0x28);
+					shift = *(unsigned long*)(shift + 0x178);
+
 					if (shift)
 					{
 						cHealth = *(float*)(shift + 0x8);
@@ -492,14 +549,26 @@ void cbESP()
 		if (SelectedDebug)
 		{
 			int x = int(GetWindowWidth() / 4); int y = 15;	// center
+			
 
-			font.Draw(x, 8 + 15 * 2, fontColor, "agPtr: %p", *(void**)agLocked.m_ptr);
+			SIZE size = ssSize("agPtr: AABBCCDD -> AABBCCDD", 16);
+			int xPad = 5; int yPad = 2;
+
+			x -= size.cx / 2;
+			y += 15;
+
+			DrawRectFilled(x - xPad, y + 20, size.cx + xPad * 2, size.cy*4 + yPad * 2, backColor - 0x44000000);
+			DrawRect(x - xPad, y + 20, size.cx + xPad * 2, size.cy * 4 + yPad * 2, 0xff444444);
+
+
+			y += 8;
+			font.Draw(x, y + 15 * 1, fontColor, "agPtr: %p <= %p", *(void**)agLocked.m_ptr, (void**)agLocked.m_ptr);
 			if (chrLocked.m_ptr)
-				font.Draw(x, 8 + 15 * 3, fontColor, "chPtr: %p", *(void**)chrLocked.m_ptr);
+				font.Draw(x, y + 15 * 2, fontColor, "chPtr: %p", *(void**)chrLocked.m_ptr);
 			
-			font.Draw(x, 8 + 15 * 4, fontColor, "agentId: %i / 0x%04X", agLocked.GetAgentId(), agLocked.GetAgentId());
+			font.Draw(x, y + 15 * 3, fontColor, "agentId: %i / 0x%04X", agLocked.GetAgentId(), agLocked.GetAgentId());
 			
-			font.Draw(x, 8 + 15 * 5, fontColor, "cat: %i / type: %i", agLocked.GetCategory(), agLocked.GetType());
+			font.Draw(x, y + 15 * 4, fontColor, "cat: %i / type: %i", agLocked.GetCategory(), agLocked.GetType());
 		}
 	}
 
@@ -592,49 +661,49 @@ void cbESP()
 			{
 			case GW2::PROFESSION_GUARDIAN:
 				ally.level = mapLevel;
-				ally.health = chr.GetMaxHealth();
+				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.guard.push_back(ally);
 				break;
 			case GW2::PROFESSION_WARRIOR:
 				ally.level = mapLevel;
-				ally.health = chr.GetMaxHealth();
+				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.war.push_back(ally);
 				break;
 			case GW2::PROFESSION_ENGINEER:
 				ally.level = mapLevel;
-				ally.health = chr.GetMaxHealth();
+				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.engi.push_back(ally);
 				break;
 			case GW2::PROFESSION_RANGER:
 				ally.level = mapLevel;
-				ally.health = chr.GetMaxHealth();
+				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.ranger.push_back(ally);
 				break;
 			case GW2::PROFESSION_THIEF:
 				ally.level = mapLevel;
-				ally.health = chr.GetMaxHealth();
+				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.thief.push_back(ally);
 				break;
 			case GW2::PROFESSION_ELEMENTALIST:
 				ally.level = mapLevel;
-				ally.health = chr.GetMaxHealth();
+				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.ele.push_back(ally);
 				break;
 			case GW2::PROFESSION_MESMER:
 				ally.level = mapLevel;
-				ally.health = chr.GetMaxHealth();
+				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.mes.push_back(ally);
 				break;
 			case GW2::PROFESSION_NECROMANCER:
 				ally.level = mapLevel;
-				ally.health = chr.GetMaxHealth();
+				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.necro.push_back(ally);
 				break;
@@ -668,7 +737,11 @@ void cbESP()
 			      DrawRect(x - xPad, y - yPad + lineHeight * 2, colx + xPad * 2, allyCount * lineHeight + lineHeight * 4 + yPad * 1, 0xff444444);
 		}
 		
-		font.Draw(x + col0, y + lineHeight * 2, fontColor, "Allies Nearby");
+		if (AllyPlayersVit)
+			font.Draw(x + col0, y + lineHeight * 2, fontColor, "Allies Nearby (charLvl: %i, wvwBonus: %i%%)", mapLevel, wvwBonus);
+		else
+			font.Draw(x + col0, y + lineHeight * 2, fontColor, "Allies Nearby", mapLevel);
+
 		font.Draw(x + col0, y + lineHeight * 4, fontColor, "Class");
 		font.Draw(x + col1, y + lineHeight * 4, fontColor, "Name");
 		font.Draw(x + col2, y + lineHeight * 4, fontColor, "Health");
@@ -693,7 +766,7 @@ void cbESP()
 			font.Draw(x + col0, y + lineHeight * i, fontColor, "War:");
 			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
 			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
-			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int(round((ally.health - base.health) / 10)));
 			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
 			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
 
@@ -707,7 +780,7 @@ void cbESP()
 			font.Draw(x + col0, y + lineHeight * i, fontColor, "Guard:");
 			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
 			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
-			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int(round((ally.health - base.health) / 10)));
 			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
 			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
 
@@ -722,7 +795,7 @@ void cbESP()
 			font.Draw(x + col0, y + lineHeight * i, fontColor, "Mes:");
 			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
 			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
-			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int(round((ally.health - base.health) / 10)));
 			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
 			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
 
@@ -736,7 +809,7 @@ void cbESP()
 			font.Draw(x + col0, y + lineHeight * i, fontColor, "Ele:");
 			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
 			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
-			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int(round((ally.health - base.health) / 10)));
 			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
 			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
 
@@ -750,7 +823,7 @@ void cbESP()
 			font.Draw(x + col0, y + lineHeight * i, fontColor, "Thief:");
 			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
 			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
-			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int(round((ally.health - base.health) / 10)));
 			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
 			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
 
@@ -764,7 +837,7 @@ void cbESP()
 			font.Draw(x + col0, y + lineHeight * i, fontColor, "Ranger:");
 			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
 			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
-			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int(round((ally.health - base.health) / 10)));
 			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
 			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
 
@@ -778,7 +851,7 @@ void cbESP()
 			font.Draw(x + col0, y + lineHeight * i, fontColor, "Engi:");
 			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
 			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
-			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int(round((ally.health - base.health) / 10)));
 			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
 			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
 
@@ -792,7 +865,7 @@ void cbESP()
 			font.Draw(x + col0, y + lineHeight * i, fontColor, "Necro:");
 			font.Draw(x + col1, y + lineHeight * i, fontColor, ally.name);
 			font.Draw(x + col2, y + lineHeight * i, fontColor, "%s hp", hp.c_str());
-			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int((ally.health - base.health) / 10));
+			if (AllyPlayersVit) font.Draw(x + col3, y + lineHeight * i, fontColor, "%+i", int(round((ally.health - base.health) / 10)));
 			if (AllyPlayersVit) font.Draw(x + col4, y + lineHeight * i, fontColor, "%+i", int(round((916 / base.vitality) * ((ally.health - base.health) / 100))));
 			DrawRect(x - xPad, y + lineHeight * i, colx + xPad * 2, 0, 0xff444444);
 
@@ -1407,6 +1480,11 @@ void HotKey()
 	RegisterHotKey(NULL, 56, MOD_ALT, 0xDB); // AttackRate -
 	RegisterHotKey(NULL, 57, MOD_ALT, 0xDD); // AttackRate +
 
+	RegisterHotKey(NULL, 60, MOD_ALT, 0x23); // MapLevel -
+	RegisterHotKey(NULL, 61, MOD_ALT, 0x24); // MapLevel +
+	RegisterHotKey(NULL, 62, MOD_ALT, 0x22); // WvWBonus -
+	RegisterHotKey(NULL, 63, MOD_ALT, 0x21); // WvWBonus +
+
 	MSG msg;
 	while (GetMessage(&msg, 0, 0, 0))
 	{
@@ -1457,6 +1535,11 @@ void HotKey()
 			if (msg.wParam == 55) AttackRate = !AttackRate;
 			if (msg.wParam == 56) if (AttackRateMin > 00.1) AttackRateMin -= 0.1;
 			if (msg.wParam == 57) if (AttackRateMin < 20.1) AttackRateMin += 0.1;
+
+			if (msg.wParam == 60) if (mapLevel > 1) mapLevel -= 1;
+			if (msg.wParam == 61) if (mapLevel < 80) mapLevel += 1;
+			if (msg.wParam == 62) if (wvwBonus > 0) wvwBonus -= 1;
+			if (msg.wParam == 63) if (wvwBonus < 10) wvwBonus += 1;
 		}
 	}
 }

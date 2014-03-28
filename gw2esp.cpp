@@ -52,6 +52,8 @@ bool Speedometer = false;
 bool AllyPlayers = false;
 bool AllyPlayersVit = false;
 
+bool WorldBossDebug = false;
+
 // Global Vars
 HWND hwnd = FindWindowEx(NULL, NULL, L"Guild Wars 2", NULL);
 Font font;
@@ -63,7 +65,6 @@ boost::circular_buffer<float> attackrateBuffer(50);
 float timer[3] {0, 0, 0};
 int dpsThis = NULL;
 Vector3 MeasureDistanceStart = { 0, 0, 0 };
-int mapLevel = 80;
 int wvwBonus = 0;
 struct ally {
 	int level;
@@ -210,16 +211,24 @@ void cbESP()
 	Vector3 mypos = me.GetAgent().GetPos();
 	Agent agLocked = GetLockedSelection();
 
-	// WORLD BOSS DEBUGGING
-	if (false)
+	// WORLD BOSS DEBUGGING [Alt B]
+	if (WorldBossDebug)
 	{
+		struct wboss {
+			int id;
+			unsigned long * pointer;
+			float cHealth;
+			float mHealth;
+		};
+		boost::circular_buffer<wboss> wbosses(100);
+
 		Agent all;
 		int allCount = 0;
 		while (all.BeNext())
 		{
 			if (all.GetType() == GW2::AGENT_TYPE_GADGET_ATTACK_TARGET)
 			{
-				//font.Draw(10, 30 + allCount * 15, fontColor, "agPtr: %p -> %p", (void**)all.m_ptr, *(void**)all.m_ptr);
+				float cHealth, mHealth;
 
 				Vector3 pos = all.GetPos();
 				float x, y;
@@ -230,11 +239,19 @@ void cbESP()
 					shift = *(unsigned long*)(shift + 0x28);
 					shift = *(unsigned long*)(shift + 0x178);
 
+					cHealth = *(float*)(shift + 0x8);
+					mHealth = *(float*)(shift + 0xC);
 
-					float cHealth = *(float*)(shift + 0x8);
-					float mHealth = *(float*)(shift + 0xC);
+					std::stringstream ss;
+					ss << FormatWithCommas(int(mHealth)) << " hp | " << FormatWithCommas(int(dist(mypos, pos))) << " in";
+					
+					SIZE size = ssSize(ss.str(), 16);
+					int xPad = 5; int yPad = 2;
+					y -= size.cy;
 
-					font.Draw(x - 40, y - 15, fontColor, "%i", int(mHealth));
+					DrawRectFilled(floor(x - xPad - size.cx / 2), floor(y - yPad), floor(size.cx + xPad * 2), floor(size.cy + yPad * 2), backColor - 0x44000000);
+					DrawRect(floor(x - xPad - size.cx / 2), floor(y - yPad), floor(size.cx + xPad * 2), floor(size.cy + yPad * 2), 0xff444444);
+					font.Draw(floor(x - size.cx / 2), floor(y), fontColor, ss.str());
 
 					DWORD color;
 					color = 0x44ff3300;
@@ -242,16 +259,32 @@ void cbESP()
 					DrawCircleFilledProjected(pos, 20.0f, color - 0x30000000);
 				}
 
+				wboss push;
+				push.id = all.GetAgentId();
+				push.pointer = (unsigned long*)all.m_ptr;
+				push.cHealth = cHealth;
+				push.mHealth = mHealth;
+
+				wbosses.push_front(push);
 				allCount++;
 			}
 		}
-		font.Draw(10, 15, fontColor, "allCount: %i", allCount);
+
+		std::stringstream ss;
+		ss << "WBoss Agents: " << allCount;
+		SIZE size = ssSize(ss.str(), 16);
+		int x = 10; int y = 30;
+		int xPad = 5; int yPad = 2;
+
+		DrawRectFilled(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, backColor - 0x44000000);
+		DrawRect(x - xPad, y - yPad, size.cx + xPad * 2, size.cy + yPad * 2, 0xff444444);
+		font.Draw(x, y, fontColor, "WBoss Agents: %i", allCount);
 	}
 	
 
 	if (Help)
 	{
-		SIZE size = ssSize("[0] [Alt V] Ally Player Vitality (lvl: Alt Home/End, wvwBonus: Alt PgUp/PgDown)", 16);
+		SIZE size = ssSize("[0] [Alt V] Ally Player Vitality (Alt PgUp/PgDown adjust wvwBonus)", 16);
 		float x = int(GetWindowWidth() / 2 - size.cx / 2);
 		float y = 150;
 		int xPad = 5; int yPad = 2;
@@ -292,7 +325,7 @@ void cbESP()
 		font.Draw(x, y + 15 * 31, fontColor, "[%i] [Alt M] Measure Distance", MeasureDistance);
 		font.Draw(x, y + 15 * 32, fontColor, "[%i] [Alt ,] Speedometer", Speedometer);
 		font.Draw(x, y + 15 * 33, fontColor, "[%i] [Alt C] Ally Player Info", AllyPlayers);
-		font.Draw(x, y + 15 * 34, fontColor, "[%i] [Alt V] Ally Player Vitality (lvl: Alt Home/End, wvwBonus: Alt PgUp/PgDown)", AllyPlayersVit, mapLevel);
+		font.Draw(x, y + 15 * 34, fontColor, "[%i] [Alt V] Ally Player Vitality (Alt PgUp/PgDown adjust wvwBonus)", AllyPlayersVit);
 	}
 
 	if (DpsMeter)
@@ -463,7 +496,7 @@ void cbESP()
 		{
 			if (agLocked.IsValid())
 			{
-				float cHealth, mHealth;
+				float cHealth = 0, mHealth = 0;
 				if (agLocked.GetType() == GW2::AGENT_TYPE_GADGET) {
 					unsigned long shift = *(unsigned long*)agLocked.m_ptr;
 					shift = *(unsigned long*)(shift + 0x30);
@@ -473,10 +506,6 @@ void cbESP()
 					{
 						cHealth = *(float*)(shift + 0x8);
 						mHealth = *(float*)(shift + 0xC);
-					}
-					else
-					{
-						cHealth = 0; mHealth = 0;
 					}
 				}
 				else if (agLocked.GetType() == GW2::AGENT_TYPE_GADGET_ATTACK_TARGET)
@@ -491,17 +520,12 @@ void cbESP()
 						cHealth = *(float*)(shift + 0x8);
 						mHealth = *(float*)(shift + 0xC);
 					}
-					else
-					{
-						cHealth = 0; mHealth = 0;
-					}
 				}
 				else if (agLocked.GetType() == GW2::AGENT_CATEGORY_CHAR)
 				{
 					cHealth = chrLocked.GetCurrentHealth();
 					mHealth = chrLocked.GetMaxHealth();
 				}
-
 				
 				std::stringstream ss;
 				if (SelectedHealth)
@@ -568,7 +592,17 @@ void cbESP()
 			
 			font.Draw(x, y + 15 * 3, fontColor, "agentId: %i / 0x%04X", agLocked.GetAgentId(), agLocked.GetAgentId());
 			
-			font.Draw(x, y + 15 * 4, fontColor, "cat: %i / type: %i", agLocked.GetCategory(), agLocked.GetType());
+			short int lvl = 0;
+			if (agLocked.GetType() == GW2::AGENT_TYPE_CHAR) {
+				unsigned long shift;
+				shift = *(unsigned long*)agLocked.m_ptr;
+				shift = *(unsigned long*)(shift + 0x30);
+				shift = *(unsigned long*)(shift + 0x1c);
+				shift = *(unsigned long*)(shift + 0xf0);
+				lvl = *(short int*)(shift + 0xb0);
+			}
+			
+			font.Draw(x, y + 15 * 4, fontColor, "cat: %i / type: %i / lvl: %i", agLocked.GetCategory(), agLocked.GetType(), lvl);
 		}
 	}
 
@@ -656,53 +690,63 @@ void cbESP()
 			if (!chr.IsValid())
 				continue;
 
+			// read character level
+			short int lvl = 0;
+			unsigned long shift;
+			shift = *(unsigned long*)agCount.m_ptr;
+			shift = *(unsigned long*)(shift + 0x30);
+			shift = *(unsigned long*)(shift + 0x1c);
+			shift = *(unsigned long*)(shift + 0xf0);
+			lvl = *(short int*)(shift + 0xb0);
+
+			// compile
 			ally ally;
 			switch (chr.GetProfession())
 			{
 			case GW2::PROFESSION_GUARDIAN:
-				ally.level = mapLevel;
+				ally.level = int(lvl);
 				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.guard.push_back(ally);
 				break;
 			case GW2::PROFESSION_WARRIOR:
-				ally.level = mapLevel;
+				ally.level = int(lvl);
 				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.war.push_back(ally);
 				break;
 			case GW2::PROFESSION_ENGINEER:
-				ally.level = mapLevel;
+				ally.level = int(lvl);
 				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.engi.push_back(ally);
 				break;
 			case GW2::PROFESSION_RANGER:
-				ally.level = mapLevel;
+				ally.level = int(lvl);
 				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.ranger.push_back(ally);
 				break;
 			case GW2::PROFESSION_THIEF:
-				ally.level = mapLevel;
+				ally.level = int(lvl);
 				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.thief.push_back(ally);
 				break;
 			case GW2::PROFESSION_ELEMENTALIST:
-				ally.level = mapLevel;
+				ally.level = int(lvl);
 				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.ele.push_back(ally);
 				break;
 			case GW2::PROFESSION_MESMER:
-				ally.level = mapLevel;
+				ally.level = int(lvl);
 				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.mes.push_back(ally);
 				break;
 			case GW2::PROFESSION_NECROMANCER:
-				ally.level = mapLevel;
+				ally.level = int(lvl);
 				ally.health = round(chr.GetMaxHealth() / (100 + wvwBonus) * 100);
 				ally.name = chr.GetName();
 				allies.necro.push_back(ally);
@@ -738,9 +782,9 @@ void cbESP()
 		}
 		
 		if (AllyPlayersVit)
-			font.Draw(x + col0, y + lineHeight * 2, fontColor, "Allies Nearby (charLvl: %i, wvwBonus: %i%%)", mapLevel, wvwBonus);
+			font.Draw(x + col0, y + lineHeight * 2, fontColor, "Allies Nearby (wvwBonus: %i%%)", wvwBonus);
 		else
-			font.Draw(x + col0, y + lineHeight * 2, fontColor, "Allies Nearby", mapLevel);
+			font.Draw(x + col0, y + lineHeight * 2, fontColor, "Allies Nearby");
 
 		font.Draw(x + col0, y + lineHeight * 4, fontColor, "Class");
 		font.Draw(x + col1, y + lineHeight * 4, fontColor, "Name");
@@ -1439,6 +1483,7 @@ void HotKey()
 {
 	// Help
 	RegisterHotKey(NULL, 0, MOD_ALT | MOD_NOREPEAT, VK_OEM_2); // Help
+	RegisterHotKey(NULL, 1, MOD_ALT | MOD_NOREPEAT, 0x42); // WorldBossDebug
 
 	// DPS Meter
 	RegisterHotKey(NULL, 10, MOD_ALT | MOD_NOREPEAT, 0x44); // DPS Meter
@@ -1480,10 +1525,8 @@ void HotKey()
 	RegisterHotKey(NULL, 56, MOD_ALT, 0xDB); // AttackRate -
 	RegisterHotKey(NULL, 57, MOD_ALT, 0xDD); // AttackRate +
 
-	RegisterHotKey(NULL, 60, MOD_ALT, 0x23); // MapLevel -
-	RegisterHotKey(NULL, 61, MOD_ALT, 0x24); // MapLevel +
-	RegisterHotKey(NULL, 62, MOD_ALT, 0x22); // WvWBonus -
-	RegisterHotKey(NULL, 63, MOD_ALT, 0x21); // WvWBonus +
+	RegisterHotKey(NULL, 60, MOD_ALT, 0x22); // WvWBonus -
+	RegisterHotKey(NULL, 61, MOD_ALT, 0x21); // WvWBonus +
 
 	MSG msg;
 	while (GetMessage(&msg, 0, 0, 0))
@@ -1494,6 +1537,7 @@ void HotKey()
 		case WM_HOTKEY:
 			// Help
 			if (msg.wParam == 0) Help = !Help;
+			if (msg.wParam == 1) WorldBossDebug = !WorldBossDebug;
 
 			// DPS Meter
 			if (msg.wParam == 10) DpsMeter = !DpsMeter;
@@ -1536,10 +1580,8 @@ void HotKey()
 			if (msg.wParam == 56) if (AttackRateMin > 00.1) AttackRateMin -= 0.1;
 			if (msg.wParam == 57) if (AttackRateMin < 20.1) AttackRateMin += 0.1;
 
-			if (msg.wParam == 60) if (mapLevel > 1) mapLevel -= 1;
-			if (msg.wParam == 61) if (mapLevel < 80) mapLevel += 1;
-			if (msg.wParam == 62) if (wvwBonus > 0) wvwBonus -= 1;
-			if (msg.wParam == 63) if (wvwBonus < 10) wvwBonus += 1;
+			if (msg.wParam == 60) if (wvwBonus > 0) wvwBonus -= 1;
+			if (msg.wParam == 61) if (wvwBonus < 10) wvwBonus += 1;
 		}
 	}
 }

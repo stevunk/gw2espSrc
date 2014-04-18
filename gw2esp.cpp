@@ -36,6 +36,7 @@ bool EnemyFloaters = true;
 bool AllyFloaters = true;
 bool EnemyPlayerFloaters = true;
 bool AllyPlayerFloaters = true;
+bool AllySupply = false;
 
 bool SelectedHealth = true;
 bool SelectedHealthPercent = true;
@@ -51,6 +52,7 @@ bool MeasureDistance = false;
 bool Speedometer = false;
 bool AllyPlayers = false;
 bool AllyPlayersVit = false;
+bool AllyPlayersSelf = false;
 
 bool WorldBossDebug = false;
 
@@ -70,6 +72,7 @@ struct ally {
 	int level;
 	int health;
 	std::string name;
+	short int supply;
 };
 struct allies {
 	std::vector<ally> war;
@@ -83,6 +86,11 @@ struct allies {
 	std::vector<ally> ele;
 	std::vector<ally> thief;
 };
+struct AttackRateVar {
+	float cHealth = 0;
+	float mHealth = 0;
+};
+AttackRateVar attackRateVar;
 
 // Global Functions
 float dist(Vector3 p1, Vector3 p2)
@@ -289,13 +297,13 @@ void cbESP()
 		float y = 150;
 		int xPad = 5; int yPad = 2;
 
-		DrawRectFilled(x - xPad, y + 15 - yPad, size.cx + xPad * 2, size.cy*32 + yPad * 4, backColor - 0x44000000);
-			  DrawRect(x - xPad, y + 15 - yPad, size.cx + xPad * 2, size.cy*32 + yPad * 4, 0xff444444);
+		DrawRectFilled(x - xPad, y + 15 - yPad, size.cx + xPad * 2, size.cy*33 + yPad * 4, backColor - 0x44000000);
+			  DrawRect(x - xPad, y + 15 - yPad, size.cx + xPad * 2, size.cy*33 + yPad * 4, 0xff444444);
 
 		font.Draw(x, y + 15 * 1, fontColor,  "[%i] [Alt /] Toggle this Help screen", SelectedHealth);
 
 		font.Draw(x, y + 15 * 3, fontColor,  "[%i] [Alt D] DPS Meter", DpsMeter);
-		font.Draw(x, y + 15 * 4, fontColor,  "[%i] [Alt B] DPS Meter Debug", DpsDebug);
+		font.Draw(x, y + 15 * 4, fontColor,  "[%i] [Alt H] DPS Meter Debug", DpsDebug);
 		font.Draw(x, y + 15 * 5, fontColor,  "[%i] [Alt N] DPS Meter AllowNegativeDPS", AllowNegativeDps);
 		font.Draw(x, y + 15 * 6, fontColor,  "[%i] [Alt L] DPS Meter/Timer LockOnCurrentlySelected", DpsLock);
 		font.Draw(x, y + 15 * 7, fontColor,  "[%i] [Alt W] Log DPS To File (GW2's folder)", DpsToFile);
@@ -326,6 +334,7 @@ void cbESP()
 		font.Draw(x, y + 15 * 32, fontColor, "[%i] [Alt ,] Speedometer", Speedometer);
 		font.Draw(x, y + 15 * 33, fontColor, "[%i] [Alt C] Ally Player Info", AllyPlayers);
 		font.Draw(x, y + 15 * 34, fontColor, "[%i] [Alt V] Ally Player Vitality (Alt PgUp/PgDown adjust wvwBonus)", AllyPlayersVit);
+		font.Draw(x, y + 15 * 35, fontColor, "[%i] [Alt B] World Boss Debug)", WorldBossDebug);
 	}
 
 	if (DpsMeter)
@@ -333,7 +342,46 @@ void cbESP()
 		if (!DpsLock)
 		{
 			if (agLocked.IsValid())
+			{
+				Character chLocked = agLocked.GetCharacter();
+				
+				float cHealth = 0, mHealth = 0;
+				if (agLocked.GetType() == GW2::AGENT_TYPE_GADGET) {
+					unsigned long shift = *(unsigned long*)agLocked.m_ptr;
+					shift = *(unsigned long*)(shift + 0x30);
+					shift = *(unsigned long*)(shift + 0x164);
+
+					if (shift)
+					{
+						cHealth = *(float*)(shift + 0x8);
+						mHealth = *(float*)(shift + 0xC);
+					}
+				}
+				else if (agLocked.GetType() == GW2::AGENT_TYPE_GADGET_ATTACK_TARGET)
+				{
+					unsigned long shift = *(unsigned long*)agLocked.m_ptr;
+					shift = *(unsigned long*)(shift + 0x30);
+					shift = *(unsigned long*)(shift + 0x28);
+					shift = *(unsigned long*)(shift + 0x178);
+
+					if (shift)
+					{
+						cHealth = *(float*)(shift + 0x8);
+						mHealth = *(float*)(shift + 0xC);
+					}
+				}
+				else if (agLocked.GetType() == GW2::AGENT_CATEGORY_CHAR)
+				{
+					cHealth = chLocked.GetCurrentHealth();
+					mHealth = chLocked.GetMaxHealth();
+				}
+
+				attackRateVar.cHealth = cHealth;
+				attackRateVar.mHealth = mHealth;
+				
 				dpsThis = agLocked.GetAgentId();
+			}
+				
 			else
 				dpsThis = NULL;
 		}
@@ -581,8 +629,8 @@ void cbESP()
 			x -= size.cx / 2;
 			y += 15;
 
-			DrawRectFilled(x - xPad, y + 20, size.cx + xPad * 2, size.cy*4 + yPad * 2, backColor - 0x44000000);
-			DrawRect(x - xPad, y + 20, size.cx + xPad * 2, size.cy * 4 + yPad * 2, 0xff444444);
+			DrawRectFilled(x - xPad, y + 20, size.cx + xPad * 2, size.cy * 5 + yPad * 2, backColor - 0x44000000);
+			DrawRect(x - xPad, y + 20, size.cx + xPad * 2, size.cy * 5 + yPad * 2, 0xff444444);
 
 
 			y += 8;
@@ -592,6 +640,7 @@ void cbESP()
 			
 			font.Draw(x, y + 15 * 3, fontColor, "agentId: %i / 0x%04X", agLocked.GetAgentId(), agLocked.GetAgentId());
 			
+			// Lvl
 			short int lvl = 0;
 			if (agLocked.GetType() == GW2::AGENT_TYPE_CHAR) {
 				unsigned long shift;
@@ -601,8 +650,19 @@ void cbESP()
 				shift = *(unsigned long*)(shift + 0xf0);
 				lvl = *(short int*)(shift + 0xb0);
 			}
+
+			// Supply
+			short int supply = 0;
+			if (agLocked.GetType() == GW2::AGENT_TYPE_CHAR) {
+				unsigned long shift;
+				shift = *(unsigned long*)agLocked.m_ptr;
+				shift = *(unsigned long*)(shift + 0x30);
+				shift = *(unsigned long*)(shift + 0x134);
+				supply = *(unsigned long*)(shift + 0x1d8);
+			}
 			
-			font.Draw(x, y + 15 * 4, fontColor, "cat: %i / type: %i / lvl: %i", agLocked.GetCategory(), agLocked.GetType(), lvl);
+			font.Draw(x, y + 15 * 4, fontColor, "cat: %i / type: %i", agLocked.GetCategory(), agLocked.GetType());
+			font.Draw(x, y + 15 * 5, fontColor, "lvl: %i / supply: %i", lvl, supply);
 		}
 	}
 
@@ -681,14 +741,15 @@ void cbESP()
 		while (agCount.BeNext())
 		{
 			Character chr = agCount.GetCharacter();
-			if (chr.IsControlled())
+			if (!chr.IsValid())
+				continue;
+
+			if (chr.IsControlled() && !AllyPlayersSelf)
 				continue;
 
 			if (!chr.IsPlayer() || chr.GetAttitude() != GW2::ATTITUDE_FRIENDLY)
 				continue;
-
-			if (!chr.IsValid())
-				continue;
+			
 
 			// read character level
 			short int lvl = 0;
@@ -781,10 +842,8 @@ void cbESP()
 			      DrawRect(x - xPad, y - yPad + lineHeight * 2, colx + xPad * 2, allyCount * lineHeight + lineHeight * 4 + yPad * 1, 0xff444444);
 		}
 		
-		if (AllyPlayersVit)
-			font.Draw(x + col0, y + lineHeight * 2, fontColor, "Allies Nearby (wvwBonus: %i%%)", wvwBonus);
-		else
-			font.Draw(x + col0, y + lineHeight * 2, fontColor, "Allies Nearby");
+		
+		font.Draw(x + col0, y + lineHeight * 2, fontColor, "Allies Nearby (WvW HP Bonus: %i%%)", wvwBonus);
 
 		font.Draw(x + col0, y + lineHeight * 4, fontColor, "Class");
 		font.Draw(x + col1, y + lineHeight * 4, fontColor, "Name");
@@ -996,6 +1055,16 @@ void cbESP()
 					
 					if (chr.IsPlayer() && int(chr.GetCurrentHealth()) > 0)
 					{
+						// Supply
+						short int supply = 0;
+						if (0) {
+							unsigned long shift;
+							shift = *(unsigned long*)ag.m_ptr;
+							shift = *(unsigned long*)(shift + 0x30);
+							shift = *(unsigned long*)(shift + 0x134);
+							supply = *(unsigned long*)(shift + 0x1d8);
+						}
+
 						// Ally Player
 						if (AllyPlayerFloaters && chr.GetAttitude() == GW2::ATTITUDE_FRIENDLY)
 						{
@@ -1012,6 +1081,7 @@ void cbESP()
 								Vector3 pos = ag.GetPos();
 								std::stringstream ss;
 								ss << FormatWithCommas(int(dist(mypos, pos)));
+								//ss << supply;
 								SIZE size = ssSize(ss.str(), 16);
 								int xOffset = int(size.cx / 2);
 								font.Draw(x - xOffset, y - 15, fontColor, ss.str());
@@ -1039,6 +1109,7 @@ void cbESP()
 								Vector3 pos = ag.GetPos();
 								std::stringstream ss;
 								ss << FormatWithCommas(int(dist(mypos, pos)));
+								//ss << supply;
 								SIZE size = ssSize(ss.str(), 16);
 								int xOffset = int(size.cx / 2);
 								font.Draw(x - xOffset, y - 15, fontColor, ss.str());
@@ -1056,6 +1127,8 @@ void cbESP()
 	}
 	if (FloaterStats)
 	{
+		int supply = 0;
+
 		int allyNpc = 0;
 		int foeNpc = 0;
 		int allyPlayer = 0;
@@ -1077,7 +1150,19 @@ void cbESP()
 			Vector3 pos = ag.GetPos();
 
 			if (chr.IsControlled())
+			{
+				// Supply
+				short int sup = 0;
+				unsigned long shift;
+				shift = *(unsigned long*)ag.m_ptr;
+				shift = *(unsigned long*)(shift + 0x30);
+				shift = *(unsigned long*)(shift + 0x134);
+				sup = *(unsigned long*)(shift + 0x1d8);
+
+				supply += int(sup);
+
 				continue;
+			}
 
 			if (dist(mypos, pos) >= FloatersRange)
 				continue;
@@ -1093,37 +1178,49 @@ void cbESP()
 				}
 				if (chr.IsPlayer() && int(chr.GetCurrentHealth()) > 0)
 				{
-					if (AllyPlayerFloaters && chr.GetAttitude() == GW2::ATTITUDE_FRIENDLY)
-						allyPlayer++;
 					if (EnemyPlayerFloaters && chr.GetAttitude() == GW2::ATTITUDE_HOSTILE)
 						foePlayer++;
 
-					switch (chr.GetProfession())
+					if (AllyPlayerFloaters && chr.GetAttitude() == GW2::ATTITUDE_FRIENDLY)
 					{
-					case GW2::PROFESSION_GUARDIAN:
-						tallyGuardian++;
-						break;
-					case GW2::PROFESSION_WARRIOR:
-						tallyWarrior++;
-						break;
-					case GW2::PROFESSION_ENGINEER:
-						tallyEngineer++;
-						break;
-					case GW2::PROFESSION_RANGER:
-						tallyRanger++;
-						break;
-					case GW2::PROFESSION_THIEF:
-						tallyThief++;
-						break;
-					case GW2::PROFESSION_ELEMENTALIST:
-						tallyElementalist++;
-						break;
-					case GW2::PROFESSION_MESMER:
-						tallyMesmer++;
-						break;
-					case GW2::PROFESSION_NECROMANCER:
-						tallyNecromancer++;
-						break;
+						allyPlayer++;
+						switch (chr.GetProfession())
+						{
+						case GW2::PROFESSION_GUARDIAN:
+							tallyGuardian++;
+							break;
+						case GW2::PROFESSION_WARRIOR:
+							tallyWarrior++;
+							break;
+						case GW2::PROFESSION_ENGINEER:
+							tallyEngineer++;
+							break;
+						case GW2::PROFESSION_RANGER:
+							tallyRanger++;
+							break;
+						case GW2::PROFESSION_THIEF:
+							tallyThief++;
+							break;
+						case GW2::PROFESSION_ELEMENTALIST:
+							tallyElementalist++;
+							break;
+						case GW2::PROFESSION_MESMER:
+							tallyMesmer++;
+							break;
+						case GW2::PROFESSION_NECROMANCER:
+							tallyNecromancer++;
+							break;
+						}
+
+						// Supply
+						short int sup = 0;
+						unsigned long shift;
+						shift = *(unsigned long*)ag.m_ptr;
+						shift = *(unsigned long*)(shift + 0x30);
+						shift = *(unsigned long*)(shift + 0x134);
+						sup = *(unsigned long*)(shift + 0x1d8);
+
+						supply += int(sup);
 					}
 				}
 			}
@@ -1135,6 +1232,7 @@ void cbESP()
 		if (EnemyFloaters) ss << " | FoeNpc: " << foeNpc;
 		if (AllyPlayerFloaters) ss << " | Allies: " << allyPlayer;
 		if (EnemyPlayerFloaters) ss << " | Foes: " << foePlayer;
+		if (AllySupply) ss << " | Supply: " << supply;
 		
 		
 		SIZE size = ssSize(ss.str(), 16);
@@ -1412,58 +1510,39 @@ void AttackrateBuffer() {
 				attackrateBuffer.clear();
 			}
 
-			Agent ag;
-			while (ag.BeNext())
+			
+			// health tracker
+			float cHealth = attackRateVar.cHealth;
+			float mHealth = attackRateVar.mHealth;
+			int tickNow = getMilliCount();
+
+			if (!previousHealth)
 			{
-				if (!ag.IsValid())
+				previousHealth = cHealth;
+			}
+			else
+			{
+				if (cHealth < 0 || cHealth > mHealth)
 					continue;
 
-				if (ag.GetAgentId() != dpsThis)
-					continue;
-
-				Character ch = ag.GetCharacter();
-				if (!ch.IsValid())
-					continue;
-
-				// health tracker
-				float cHealth = ch.GetCurrentHealth();
-				float mHealth = ch.GetMaxHealth();
-				int tickNow = getMilliCount();
-
-				Agent verify = ch.GetAgent();
-				if (ag.GetAgentId() != verify.GetAgentId())
-					continue;
-
-				if (!previousHealth)
+				if (previousHealth > cHealth)
 				{
-					previousHealth = cHealth;
-				}
-				else
-				{
-					if (cHealth < 0 || cHealth > mHealth)
-						continue;
-
-					if (previousHealth > cHealth)
+					if (!lastTick)
 					{
-						if (!lastTick)
-						{
-							lastTick = tickNow;
-						}
-						else if (getMilliSpan(lastTick) > (AttackRateMin * 1000))
-						{
-							tick = getMilliSpan(lastTick);
-							tick = tick / 1000;
-							attackrateBuffer.push_front(tick);
-							//attackrateBuffer.push_front(mHealth);
-
-							lastTick = tickNow;
-						}
+						lastTick = tickNow;
 					}
-					
-					previousHealth = cHealth;
-				}
+					else if (getMilliSpan(lastTick) > (AttackRateMin * 1000))
+					{
+						tick = getMilliSpan(lastTick);
+						tick = tick / 1000;
+						attackrateBuffer.push_front(tick);
+						//attackrateBuffer.push_front(mHealth);
 
-				break;
+						lastTick = tickNow;
+					}
+				}
+					
+				previousHealth = cHealth;
 			}
 			dpsCurrent = dpsThis;
 		}
@@ -1487,7 +1566,7 @@ void HotKey()
 
 	// DPS Meter
 	RegisterHotKey(NULL, 10, MOD_ALT | MOD_NOREPEAT, 0x44); // DPS Meter
-	RegisterHotKey(NULL, 11, MOD_ALT | MOD_NOREPEAT, 0x42); // DPS Meter Debug
+	RegisterHotKey(NULL, 11, MOD_ALT | MOD_NOREPEAT, 0x48); // DPS Meter Debug
 	RegisterHotKey(NULL, 12, MOD_ALT | MOD_NOREPEAT, 0x4E); // DPS Meter Allow Negative DPS
 	RegisterHotKey(NULL, 13, MOD_ALT | MOD_NOREPEAT, 0x4C); // DPS Meter LockToCurrentlySelected
 	RegisterHotKey(NULL, 14, MOD_ALT | MOD_NOREPEAT, 0x57); // Log DPS to file
@@ -1500,12 +1579,14 @@ void HotKey()
 	RegisterHotKey(NULL, 22, MOD_ALT | MOD_NOREPEAT, 0x31); // Floaters Ally NPC
 	RegisterHotKey(NULL, 23, MOD_ALT | MOD_NOREPEAT, 0x32); // Floaters Enemy NPC
 	RegisterHotKey(NULL, 24, MOD_ALT | MOD_NOREPEAT, 0x33); // Floaters Ally Players
-	RegisterHotKey(NULL, 25, MOD_ALT | MOD_NOREPEAT, 0x34); // Flaoters Enemy Players
+	RegisterHotKey(NULL, 25, MOD_ALT | MOD_NOREPEAT, 0x34); // Floaters Enemy Players
 	RegisterHotKey(NULL, 26, MOD_ALT | MOD_NOREPEAT, 0x39); // Floater Stats
 	RegisterHotKey(NULL, 27, MOD_ALT | MOD_NOREPEAT, 0x38); // Floater Classes
 
 	RegisterHotKey(NULL, 28, MOD_ALT, 0x6B); // Floaters Range +
-	RegisterHotKey(NULL, 29, MOD_ALT, 0x6D); // Flaoters Range -
+	RegisterHotKey(NULL, 29, MOD_ALT, 0x6D); // Floaters Range -
+
+	RegisterHotKey(NULL, 299, MOD_ALT | MOD_NOREPEAT, 0x35); // Floaters AllySupplyCount
 
 	// Selected
 	RegisterHotKey(NULL, 30, MOD_ALT | MOD_NOREPEAT, 0x53); // Selected Health/Percent
@@ -1520,10 +1601,11 @@ void HotKey()
 	RegisterHotKey(NULL, 51, MOD_ALT | MOD_NOREPEAT, 0x4D); // Measure Distance
 	RegisterHotKey(NULL, 52, MOD_ALT | MOD_NOREPEAT, 0x43); // Ally Player list
 	RegisterHotKey(NULL, 53, MOD_ALT | MOD_NOREPEAT, 0x56); // Ally Player list +vit
-	RegisterHotKey(NULL, 54, MOD_ALT | MOD_NOREPEAT, 0xBC); // Speedometer
-	RegisterHotKey(NULL, 55, MOD_ALT | MOD_NOREPEAT, 0x41); // AttackRate
-	RegisterHotKey(NULL, 56, MOD_ALT, 0xDB); // AttackRate -
-	RegisterHotKey(NULL, 57, MOD_ALT, 0xDD); // AttackRate +
+	RegisterHotKey(NULL, 54, MOD_ALT | MOD_NOREPEAT, 0x58); // Ally Player list +self
+	RegisterHotKey(NULL, 55, MOD_ALT | MOD_NOREPEAT, 0xBC); // Speedometer
+	RegisterHotKey(NULL, 56, MOD_ALT | MOD_NOREPEAT, 0x41); // AttackRate
+	RegisterHotKey(NULL, 57, MOD_ALT, 0xDB); // AttackRate -
+	RegisterHotKey(NULL, 58, MOD_ALT, 0xDD); // AttackRate +
 
 	RegisterHotKey(NULL, 60, MOD_ALT, 0x22); // WvWBonus -
 	RegisterHotKey(NULL, 61, MOD_ALT, 0x21); // WvWBonus +
@@ -1560,7 +1642,8 @@ void HotKey()
 			
 			if (msg.wParam == 28) if (FloatersRange < 15000) FloatersRange += 100;
 			if (msg.wParam == 29) if (FloatersRange > 100) FloatersRange -= 100;
-			
+
+			if (msg.wParam == 299) AllySupply = !AllySupply;
 
 			// Selected
 			if (msg.wParam == 30) { SelectedHealth = !SelectedHealth; SelectedHealthPercent = !SelectedHealthPercent; }
@@ -1575,10 +1658,11 @@ void HotKey()
 			if (msg.wParam == 51) MeasureDistance = !MeasureDistance;
 			if (msg.wParam == 52) AllyPlayers = !AllyPlayers;
 			if (msg.wParam == 53) AllyPlayersVit = !AllyPlayersVit;
-			if (msg.wParam == 54) Speedometer = !Speedometer;
-			if (msg.wParam == 55) AttackRate = !AttackRate;
-			if (msg.wParam == 56) if (AttackRateMin > 00.1) AttackRateMin -= 0.1;
-			if (msg.wParam == 57) if (AttackRateMin < 20.1) AttackRateMin += 0.1;
+			if (msg.wParam == 54) AllyPlayersSelf = !AllyPlayersSelf;
+			if (msg.wParam == 55) Speedometer = !Speedometer;
+			if (msg.wParam == 56) AttackRate = !AttackRate;
+			if (msg.wParam == 57) if (AttackRateMin > 00.1) AttackRateMin -= 0.1;
+			if (msg.wParam == 58) if (AttackRateMin < 20.1) AttackRateMin += 0.1;
 
 			if (msg.wParam == 60) if (wvwBonus > 0) wvwBonus -= 1;
 			if (msg.wParam == 61) if (wvwBonus < 10) wvwBonus += 1;
@@ -1586,17 +1670,25 @@ void HotKey()
 	}
 }
 
-void CodeMain()
+class TestDll : public GW2LIB::Main
 {
-	NewThread(DpsBuffer);
-	NewThread(LogDps);
-	NewThread(SpeedBuffer);
-	NewThread(AttackrateBuffer);
-	NewThread(HotKey);
-	EnableEsp(cbESP);
-	
-	if (!font.Init(16, "Verdana"))
-		DbgOut("could not init Font");
-}
+public:
+	bool init() override
+	{
+		NewThread(DpsBuffer);
+		NewThread(LogDps);
+		NewThread(SpeedBuffer);
+		NewThread(AttackrateBuffer);
+		NewThread(HotKey);
+		EnableEsp(cbESP);
+		if (!font.Init(16, "Verdana"))
+		{
+			DbgOut("could not init Font");
+			return false;
+		}
 
-GW2LIBInit(CodeMain);
+		return true;
+	}
+};
+
+TestDll g_testDll;
